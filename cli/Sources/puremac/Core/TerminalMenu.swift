@@ -3,7 +3,12 @@ import TerminalUI
 
 struct TerminalMenuModel {
     let optionCount: Int
-    private(set) var selection = 0
+    private(set) var selection: Int
+
+    init(optionCount: Int, selection: Int = 0) {
+        self.optionCount = optionCount
+        self.selection = min(max(0, optionCount - 1), max(0, selection))
+    }
 
     mutating func move(_ delta: Int) {
         guard optionCount > 0 else { return }
@@ -30,13 +35,14 @@ enum TerminalMenu {
     static func choose(
         title: String,
         subtitle: String,
-        options: [(title: String, detail: String)]
+        options: [(title: String, detail: String)],
+        initialSelection: Int = 0
     ) throws -> Int? {
         guard !options.isEmpty else { return nil }
         let session = try TerminalSession()
         defer { session.close() }
 
-        var model = TerminalMenuModel(optionCount: options.count)
+        var model = TerminalMenuModel(optionCount: options.count, selection: initialSelection)
         while true {
             session.draw(
                 render(
@@ -131,10 +137,13 @@ enum TerminalMenu {
         let indent = 6
         let textWidth = max(1, rect.width - indent)
         let rowStyle = TextStyle(inverse: focused)
+        let numberText = "\(number)."
         buffer.write(
             [
                 FocusPointer.span(focused: focused),
-                Span(" " + Term.pad("\(number).", to: 4) + Term.pad(Term.truncate(option.title, to: textWidth), to: textWidth), rowStyle)
+                Span(" ", rowStyle),
+                Span(Term.pad(numberText, to: 4), focused ? rowStyle : TextStyle(color: .cyan)),
+                Span(Term.pad(Term.truncate(option.title, to: textWidth), to: textWidth), rowStyle)
             ],
             x: rect.x,
             y: rect.y,

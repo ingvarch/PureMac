@@ -36,15 +36,21 @@ struct Optimize: ParsableCommand {
         case "snapshots":
             try showSnapshots()
         default:
-            let memory = try SystemInfo.memoryStatus()
-            let volume = try SystemInfo.volumeStatus("/")
-            Self.printPlain(Self.statusSheet(
-                memory: memory,
-                pressure: SystemInfo.memoryPressure(),
-                volume: volume,
-                uptime: ProcessInfo.processInfo.systemUptime
-            ))
+            Self.printPlain(try Self.currentStatusSheet())
         }
+    }
+
+    static let statusTitle = "Mac status"
+
+    static func currentStatusSheet() throws -> InfoSheet {
+        let memory = try SystemInfo.memoryStatus()
+        let volume = try SystemInfo.volumeStatus("/")
+        return statusSheet(
+            memory: memory,
+            pressure: SystemInfo.memoryPressure(),
+            volume: volume,
+            uptime: ProcessInfo.processInfo.systemUptime
+        )
     }
 
     static func statusSheet(
@@ -54,7 +60,7 @@ struct Optimize: ParsableCommand {
         uptime: TimeInterval
     ) -> InfoSheet {
         InfoSheet(
-            title: "Mac status",
+            title: statusTitle,
             subtitle: "Read-only measurements from macOS",
             sections: [
                 memorySection(memory, pressure: pressure),

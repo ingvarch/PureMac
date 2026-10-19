@@ -112,8 +112,8 @@ public struct Buffer: Equatable {
             var current = TextStyle.plain
             for column in 0..<width {
                 let cell = cells[index(x: column, y: row)]
-                if colors, cell.style != current {
-                    line += cell.style == .plain ? "\u{1B}[0m" : "\u{1B}[0m\u{1B}[\(cell.style.sgrParameters)m"
+                if colors {
+                    line += cell.style.transition(from: current)
                     current = cell.style
                 }
                 line += cell.symbol

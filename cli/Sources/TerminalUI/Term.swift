@@ -145,35 +145,25 @@ public enum Term {
 
 extension Term {
     public static func wrap(_ string: String, width: Int) -> [String] {
-        let safe = sanitize(string)
-        guard !safe.isEmpty else { return [""] }
-        var lines: [String] = []
-        var current = ""
-        var used = 0
-        for character in safe {
-            let characterWidth = max(0, displayWidth(String(character)))
-            if used + characterWidth > width && !current.isEmpty {
-                lines.append(current)
-                current = ""
-                used = 0
-            }
-            current.append(character)
-            used += characterWidth
-        }
-        if !current.isEmpty { lines.append(current) }
-        return lines.isEmpty ? [""] : lines
+        let characters = sanitize(string).map { (character: $0, style: TextStyle.plain) }
+        let (lines, last) = hardBreak(characters, width: width)
+        return (lines + [last]).map { String($0.map(\.character)) }
     }
 
     public static func wordWrap(_ string: String, width: Int) -> [String] {
-        var lines: [String] = []
-        var current = ""
-        var gap = ""
-        for token in wordTokens(sanitize(string)) {
+        wordWrap([Span(string)], width: width).map { $0.map(\.text).joined() }
+    }
+
+    public static func wordWrap(_ spans: [Span], width: Int) -> [[Span]] {
+        var lines: [[StyledCharacter]] = []
+        var current: [StyledCharacter] = []
+        var gap: [StyledCharacter] = []
+        for token in wordTokens(spans) {
             guard !token.isSpaces else {
-                gap = token.text
+                gap = token.characters
                 continue
             }
-            let word = token.text
+            let word = token.characters
             if displayWidth(word) <= width {
                 if current.isEmpty {
                     current = word
@@ -186,22 +176,72 @@ extension Term {
                 continue
             }
             if !current.isEmpty { lines.append(current) }
-            let pieces = wrap(word, width: width)
-            lines += pieces.dropLast()
-            current = pieces[pieces.count - 1]
+            let (broken, last) = hardBreak(word, width: width)
+            lines += broken
+            current = last
         }
         lines.append(current)
-        return lines
+        return lines.map(merged)
     }
 
-    private static func wordTokens(_ string: String) -> [(text: String, isSpaces: Bool)] {
-        var tokens: [(text: String, isSpaces: Bool)] = []
-        for character in string {
-            let isSpace = character == " "
-            if let last = tokens.last, last.isSpaces == isSpace {
-                tokens[tokens.count - 1].text.append(character)
+    private typealias StyledCharacter = (character: Character, style: TextStyle)
+
+    private static func hardBreak(_ characters: [StyledCharacter], width: Int) -> (lines: [[StyledCharacter]], last: [StyledCharacter]) {
+        var lines: [[StyledCharacter]] = []
+        var current: [StyledCharacter] = []
+        var used = 0
+        for character in characters {
+            let characterWidth = displayWidth([character])
+            if used + characterWidth > width && !current.isEmpty {
+                lines.append(current)
+                current = []
+                used = 0
+            }
+            current.append(character)
+            used += characterWidth
+        }
+        return (lines, current)
+    }
+
+    public static func styled(_ spans: [Span], colors: Bool = colorEnabled) -> String {
+        var output = ""
+        var current = TextStyle.plain
+        for span in spans {
+            let text = sanitize(span.text)
+            guard !text.isEmpty else { continue }
+            if colors { output += span.style.transition(from: current) }
+            current = span.style
+            output += text
+        }
+        return colors && current != .plain ? output + "\u{1B}[0m" : output
+    }
+
+    private static func displayWidth(_ characters: [StyledCharacter]) -> Int {
+        characters.reduce(0) { $0 + max(0, displayWidth(String($1.character))) }
+    }
+
+    private static func merged(_ characters: [StyledCharacter]) -> [Span] {
+        var spans: [Span] = []
+        for (character, style) in characters {
+            if let last = spans.last, last.style == style {
+                spans[spans.count - 1].text.append(character)
             } else {
-                tokens.append((String(character), isSpace))
+                spans.append(Span(String(character), style))
+            }
+        }
+        return spans
+    }
+
+    private static func wordTokens(_ spans: [Span]) -> [(characters: [StyledCharacter], isSpaces: Bool)] {
+        var tokens: [(characters: [StyledCharacter], isSpaces: Bool)] = []
+        for span in spans {
+            for character in sanitize(span.text) {
+                let isSpace = character == " "
+                if let last = tokens.last, last.isSpaces == isSpace {
+                    tokens[tokens.count - 1].characters.append((character, span.style))
+                } else {
+                    tokens.append(([(character, span.style)], isSpace))
+                }
             }
         }
         return tokens

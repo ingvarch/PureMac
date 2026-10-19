@@ -59,4 +59,55 @@ final class TermTests: XCTestCase {
     func testWordWrapHardBreaksLongWord() {
         XCTAssertEqual(Term.wordWrap("ab abcdefg", width: 3), ["ab", "abc", "def", "g"])
     }
+
+    func testSpanWordWrapKeepsStylesAcrossLines() {
+        let dim = TextStyle(dim: true)
+        let cyan = TextStyle(color: .cyan)
+        let spans = [Span("Add one with ", dim), Span("`puremac ignore add <path>`", cyan), Span(".", dim)]
+        XCTAssertEqual(Term.wordWrap(spans, width: 24), [
+            [Span("Add one with ", dim), Span("`puremac", cyan)],
+            [Span("ignore add <path>`", cyan), Span(".", dim)],
+        ])
+    }
+
+    func testSpanWordWrapDropsTheSpaceAtALineBreakWhateverItsStyle() {
+        let dim = TextStyle(dim: true)
+        XCTAssertEqual(
+            Term.wordWrap([Span("one ", dim), Span("two", .plain)], width: 3),
+            [[Span("one", dim)], [Span("two")]]
+        )
+    }
+
+    func testSpanWordWrapJoinsAWordSplitAcrossSpans() {
+        let bold = TextStyle(bold: true)
+        XCTAssertEqual(
+            Term.wordWrap([Span("ab", bold), Span("cd ef")], width: 5),
+            [[Span("ab", bold), Span("cd")], [Span("ef")]]
+        )
+    }
+
+    func testSpanWordWrapHardBreaksALongWordKeepingItsStyle() {
+        let cyan = TextStyle(color: .cyan)
+        XCTAssertEqual(
+            Term.wordWrap([Span("ab ", .plain), Span("abcdefg", cyan)], width: 3),
+            [[Span("ab")], [Span("abc", cyan)], [Span("def", cyan)], [Span("g", cyan)]]
+        )
+    }
+
+    func testSpanWordWrapOfNothingIsOneEmptyRow() {
+        XCTAssertEqual(Term.wordWrap([Span("")], width: 10), [[]])
+        XCTAssertEqual(Term.wordWrap([], width: 10), [[]])
+    }
+
+    func testStyledJoinsSpanTextAndAddsCodesOnlyWithColors() {
+        let dim = TextStyle(dim: true)
+        let spans = [Span("a", dim), Span("b", dim), Span("c")]
+        XCTAssertEqual(Term.styled(spans, colors: false), "abc")
+        XCTAssertEqual(Term.styled(spans, colors: true), "\u{1B}[0m\u{1B}[2mab\u{1B}[0mc")
+        XCTAssertEqual(Term.styled([], colors: true), "")
+    }
+
+    func testStyledKeepsZeroWidthCharactersAndSanitizesControls() {
+        XCTAssertEqual(Term.styled([Span("a\u{200B}b\u{07}")], colors: false), "a\u{200B}b\u{FFFD}")
+    }
 }

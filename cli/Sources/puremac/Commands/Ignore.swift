@@ -33,14 +33,36 @@ struct Ignore: ParsableCommand {
 
     struct List: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show protected paths.")
+        static let sheetTitle = "Protected paths"
+
         func run() throws {
             let store = try IgnoreStore(fileURL: AppPaths.ignoreFile)
-            if store.roots.isEmpty {
-                print(Term.dim("No protected paths. Add one with `puremac ignore add <path>`."))
+            guard !store.roots.isEmpty else {
+                print(Term.styled(Self.emptyHint(quoted: true)))
                 return
             }
             print(Term.bold("Protected paths:"))
-            for root in store.roots.sorted() { print("  " + Render.shorten(root)) }
+            for line in Self.sheet(roots: store.roots).plainLines(withHeader: false) { print(line) }
+        }
+
+        static func emptyHint(quoted: Bool) -> [Span] {
+            let quote = quoted ? "`" : ""
+            return [
+                Span("No protected paths. Add one with " + quote, TextStyle(dim: true)),
+                Span("puremac ignore add <path>", TextStyle(color: .cyan)),
+                Span(quote + ".", TextStyle(dim: true)),
+            ]
+        }
+
+        static func sheet(roots: [String]) -> InfoSheet {
+            let rows: [InfoRow] = roots.isEmpty
+                ? [.message(emptyHint(quoted: false))]
+                : roots.sorted().map { .path(Render.shorten($0)) }
+            return InfoSheet(title: sheetTitle, subtitle: nil, sections: [InfoSection(title: nil, rows: rows)], footnote: nil)
+        }
+
+        static func currentSheet() throws -> InfoSheet {
+            sheet(roots: try IgnoreStore(fileURL: AppPaths.ignoreFile).roots)
         }
     }
 }

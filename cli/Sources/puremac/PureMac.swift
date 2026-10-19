@@ -41,7 +41,15 @@ enum HomeMenu {
     ]
 
     static func run() throws {
-        while let choice = try TerminalMenu.choose(title: title, subtitle: subtitle, options: options) {
+        var focus = 0
+        while let choice = try TerminalMenu.choose(title: title, subtitle: subtitle, options: options, initialSelection: focus) {
+            focus = choice
+            if let sheet = sheet(forChoice: choice) {
+                let session = try TerminalSession()
+                defer { session.close() }
+                sheet.show(in: session)
+                continue
+            }
             switch choice {
             case 0:
                 guard let category = try TerminalMenu.choose(
@@ -61,18 +69,17 @@ enum HomeMenu {
             case exploreIndex:
                 guard try ExploreConfirmation.ask() else { continue }
                 try Analyze.parse([]).run()
-            case 3: try Optimize.parse([]).run()
-            case 4: try Config.parse([]).run()
-            case 5: try Ignore.List.parse([]).run()
             default: return
             }
-            guard waitsForReturn(afterChoice: choice) else { continue }
-            print(Term.dim("\nPress Return to return to PureMac."), terminator: " ")
-            guard readLine() != nil else { return }
         }
     }
 
-    static func waitsForReturn(afterChoice choice: Int) -> Bool {
-        choice != 0 && choice != 1
+    static func sheet(forChoice choice: Int) -> InfoSheet? {
+        switch choice {
+        case 3: return InfoSheet.loading(title: Optimize.statusTitle, Optimize.currentStatusSheet)
+        case 4: return InfoSheet.loading(title: Config.sheetTitle, Config.currentSheet)
+        case 5: return InfoSheet.loading(title: Ignore.List.sheetTitle, Ignore.List.currentSheet)
+        default: return nil
+        }
     }
 }

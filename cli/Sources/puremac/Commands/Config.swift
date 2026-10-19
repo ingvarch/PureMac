@@ -50,18 +50,33 @@ struct Config: ParsableCommand {
             return
         }
 
-        print(Term.bold("PureMac CLI settings"))
-        print(Term.dim("Values used when a command-line option is omitted"))
-        print("")
-        for key in ConfigStore.knownKeys {
-            let isSaved = store.values[key] != nil
-            let value = store.values[key] ?? ConfigStore.defaultValues[key] ?? ""
-            let source = isSaved ? "saved" : "default"
-            print("  \(key.padding(toLength: 26, withPad: " ", startingAt: 0)) \(value) days  " + Term.dim(source))
+        for line in Self.sheet(store: store).plainLines() { print(line) }
+    }
+
+    static let sheetTitle = "PureMac CLI settings"
+
+    static func sheet(store: ConfigStore) -> InfoSheet {
+        let keys = ConfigStore.knownKeys.map { key -> InfoRow in
+            let saved = store.values[key]
+            let value = saved ?? ConfigStore.defaultValues[key] ?? ""
+            let note = saved == nil ? Span("default", TextStyle(dim: true)) : Span("saved", TextStyle(color: .cyan))
+            return .metric(label: key, value: [Span("\(value) days")], note: note)
         }
-        print("")
-        print(Term.bold("Files"))
-        print("  \("Settings".padding(toLength: 12, withPad: " ", startingAt: 0)) \(Render.shorten(AppPaths.configFile.path))")
-        print("  \("Protected".padding(toLength: 12, withPad: " ", startingAt: 0)) \(Render.shorten(AppPaths.ignoreFile.path))")
+        let files = [("Settings", AppPaths.configFile), ("Protected", AppPaths.ignoreFile)].map { label, url in
+            InfoRow.metric(label: label, value: [Span(Render.shorten(url.path))], note: nil)
+        }
+        return InfoSheet(
+            title: sheetTitle,
+            subtitle: "Values used when a command-line option is omitted",
+            sections: [
+                InfoSection(title: nil, labelWidth: 26, rows: keys),
+                InfoSection(title: "Files", labelWidth: 12, rows: files),
+            ],
+            footnote: nil
+        )
+    }
+
+    static func currentSheet() throws -> InfoSheet {
+        sheet(store: try ConfigStore(fileURL: AppPaths.configFile))
     }
 }

@@ -34,6 +34,11 @@ public struct TextStyle: Equatable {
         if let color { codes.append(color.sgrCode) }
         return codes.map(String.init).joined(separator: ";")
     }
+
+    func transition(from current: TextStyle) -> String {
+        guard self != current else { return "" }
+        return self == .plain ? "\u{1B}[0m" : "\u{1B}[0m\u{1B}[\(sgrParameters)m"
+    }
 }
 
 public struct Span: Equatable {

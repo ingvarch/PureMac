@@ -346,6 +346,26 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertEqual(buffer[2, 1].style, TextStyle(dim: true))
     }
 
+    func testMenuNumbersAreCyanExceptOnTheFocusedRow() {
+        let buffer = renderMenu(options: menuOptions(2), selection: 0, width: 40, height: 12)
+        XCTAssertEqual(buffer[4, 3].symbol, "1")
+        XCTAssertEqual(buffer[4, 3].style, TextStyle(inverse: true))
+        XCTAssertEqual(buffer[4, 5].symbol, "2")
+        XCTAssertEqual(buffer[5, 5].symbol, ".")
+        XCTAssertEqual(buffer[4, 5].style, TextStyle(color: .cyan))
+        XCTAssertEqual(buffer[5, 5].style, TextStyle(color: .cyan))
+        XCTAssertEqual(buffer[8, 5].style, .plain)
+        XCTAssertEqual(buffer.plainLines()[5], renderMenu(options: menuOptions(2), selection: 1, width: 40, height: 12).plainLines()[5].replacingOccurrences(of: "›", with: " "))
+    }
+
+    func testMenuModelStartsAtTheInitialSelectionClamped() {
+        XCTAssertEqual(TerminalMenuModel(optionCount: 6, selection: 4).selection, 4)
+        XCTAssertEqual(TerminalMenuModel(optionCount: 6, selection: 99).selection, 5)
+        XCTAssertEqual(TerminalMenuModel(optionCount: 6, selection: -3).selection, 0)
+        XCTAssertEqual(TerminalMenuModel(optionCount: 0, selection: 2).selection, 0)
+        XCTAssertEqual(TerminalMenuModel(optionCount: 6).selection, 0)
+    }
+
     func testMenuRenderBelowMinimumUsesTooSmallScreen() {
         let buffer = renderMenu(options: menuOptions(2), selection: 0, width: 30, height: 8)
         XCTAssertEqual(buffer, TooSmallScreen.render(title: "PureMac", exitHint: "Esc/q cancel", width: 30, height: 8))
@@ -628,14 +648,6 @@ final class InteractiveScreensTests: XCTestCase {
         let buffer = renderReview(selectedModel(), width: 80, height: 24)
         XCTAssertEqual(buffer[3, 0].style, TextStyle(color: .cyan, bold: true))
         XCTAssertFalse(buffer.plainLines().contains { $0.contains("Cancel") })
-    }
-
-    func testHomeMenuWaitsForReturnOnlyAfterEntriesOutsideCleanup() {
-        XCTAssertFalse(HomeMenu.waitsForReturn(afterChoice: 0))
-        XCTAssertFalse(HomeMenu.waitsForReturn(afterChoice: 1))
-        for choice in 2...5 {
-            XCTAssertTrue(HomeMenu.waitsForReturn(afterChoice: choice))
-        }
     }
 
     func testEnterOnTheSelectionOpensDialogAndNeverReturnsTheSelection() {
