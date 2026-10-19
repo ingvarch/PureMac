@@ -27,13 +27,6 @@ final class TermTests: XCTestCase {
         XCTAssertTrue(value.hasSuffix("ches/tool"))
     }
 
-    func testTermBarOutputIsUnchanged() {
-        XCTAssertEqual(Term.bar(fraction: 0.25, width: 8), "██░░░░░░")
-        XCTAssertEqual(Term.bar(fraction: 3, width: 3), "███")
-        XCTAssertEqual(Term.bar(fraction: 0.5, width: -2), "")
-        XCTAssertEqual(Term.bar(fraction: 0.5).count, 24)
-    }
-
     func testWrapPreservesEveryCharacter() {
         let path = "/Users/example/a folder/with/a/very-long-name/file.bin"
         let lines = Term.wrap(path, width: 11)

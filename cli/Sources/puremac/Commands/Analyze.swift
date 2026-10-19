@@ -265,18 +265,20 @@ struct Analyze: ParsableCommand {
         total: Int64,
         indent: String,
         depthLeft: Int,
-        ignore: IgnoreStore = IgnoreStore()
+        ignore: IgnoreStore = IgnoreStore(),
+        colors: Bool = Term.colorEnabled
     ) {
         for child in children where child.size > 0 || child.isPartial {
             let fraction = total > 0 ? Double(child.size) / Double(total) : 0
             let percentage = String(format: "%5.1f%%", fraction * 100)
-            let size = ByteCount.human(child.size).padding(toLength: 10, withPad: " ", startingAt: 0)
-            let partial = child.isPartial ? Term.yellow(" !") : ""
+            let size = Render.coloredSizeCol(child.size, colors: colors)
+            let bar = Term.styled(Gauge(fraction: fraction).spans(width: 20, filled: SizeLevel.style(bytes: child.size, focused: false)), colors: colors)
+            let partial = child.isPartial ? Render.paint(" !", TextStyle(color: .yellow), colors) : ""
             let name = URL(fileURLWithPath: child.path).lastPathComponent + child.suffix
-            print("\(indent)\(size) \(Term.dim(percentage)) \(Term.bar(fraction: fraction, width: 20)) \(name)\(partial)")
+            print("\(indent)\(size) \(Render.paint(percentage, TextStyle(dim: true), colors)) \(bar) \(name)\(partial)")
             if depthLeft > 0 && child.isDir && !child.isPackage {
                 let snapshot = scanFolder(child.path, ignore: ignore)
-                printLevel(Array(snapshot.children.prefix(10)), total: child.size, indent: indent + "  ", depthLeft: depthLeft - 1, ignore: ignore)
+                printLevel(Array(snapshot.children.prefix(10)), total: child.size, indent: indent + "  ", depthLeft: depthLeft - 1, ignore: ignore, colors: colors)
                 printDiagnostics(snapshot, indent: indent + "  ")
             }
         }

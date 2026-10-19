@@ -37,12 +37,6 @@ public enum Term {
         return answer == "y" || answer == "yes"
     }
 
-    public static func bar(fraction: Double, width: Int = 24) -> String {
-        let filled = filledCount(fraction: fraction, width: width)
-        return String(repeating: "█", count: filled)
-            + String(repeating: "░", count: max(0, width) - filled)
-    }
-
     static func filledCount(fraction: Double, width: Int) -> Int {
         let clamped = max(0, min(1, fraction))
         return Int((Double(max(0, width)) * clamped).rounded())

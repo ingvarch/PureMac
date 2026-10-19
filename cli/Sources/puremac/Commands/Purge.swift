@@ -133,20 +133,20 @@ struct Purge: ParsableCommand {
         return 7
     }
 
-    private func renderScan(_ cat: CategoryScan, days: Int) {
+    func renderScan(_ cat: CategoryScan, days: Int, colors: Bool = Term.colorEnabled) {
         let projectCount = cat.groups.count
         print("")
-        print(Term.bold("Found \(ByteCount.human(cat.allBytes)) across \(projectCount) project\(projectCount == 1 ? "" : "s")"))
+        print(Render.paint("Found \(ByteCount.human(cat.allBytes)) across \(projectCount) project\(projectCount == 1 ? "" : "s")", TextStyle(bold: true), colors))
         for group in cat.groups {
             print("")
-            print("  \(Term.cyan(group.tool))  \(Term.dim(ByteCount.human(group.allBytes)))")
+            print("  \(Render.paint(group.tool, TextStyle(color: .cyan), colors))  \(Render.paint(ByteCount.human(group.allBytes), TextStyle(dim: true), colors))")
             for item in group.items {
-                let mark = item.selected ? Term.green("✓") : Term.dim("·")
-                let recent = item.selected ? "" : Term.dim("  recent")
-                print("    \(mark) \(Render.sizeCol(item.sizeBytes)) \(Render.shorten(item.path))\(recent)")
+                let mark = item.selected ? Render.paint("✓", TextStyle(color: .green), colors) : Render.paint("·", TextStyle(dim: true), colors)
+                let recent = item.selected ? "" : Render.paint("  recent", TextStyle(dim: true), colors)
+                print("    \(mark) \(Render.coloredSizeCol(item.sizeBytes, colors: colors)) \(Render.shorten(item.path))\(recent)")
             }
         }
         print("")
-        print(Term.dim("Artifacts newer than \(days) days are shown but left unchecked."))
+        print(Render.paint("Artifacts newer than \(days) days are shown but left unchecked.", TextStyle(dim: true), colors))
     }
 }

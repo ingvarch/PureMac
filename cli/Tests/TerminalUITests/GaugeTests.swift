@@ -30,13 +30,12 @@ final class GaugeTests: XCTestCase {
         XCTAssertEqual(Gauge(fraction: 0.5).spans(width: -3), [])
     }
 
-    func testRoundingMatchesTermBar() {
-        for width in [1, 5, 12, 24] {
-            for step in 0...40 {
-                let fraction = Double(step) / 40
-                let text = Gauge(fraction: fraction).spans(width: width).map(\.text).joined()
-                XCTAssertEqual(text, Term.bar(fraction: fraction, width: width))
-            }
+    func testRoundingOfFilledCells() {
+        let cases: [(Double, Int, String)] = [
+            (0.25, 8, "██░░░░░░"), (0.5, 5, "███░░"), (0.49, 12, "██████░░░░░░"), (0.99, 24, "████████████████████████")
+        ]
+        for (fraction, width, expected) in cases {
+            XCTAssertEqual(Gauge(fraction: fraction).spans(width: width).map(\.text).joined(), expected)
         }
     }
 }
