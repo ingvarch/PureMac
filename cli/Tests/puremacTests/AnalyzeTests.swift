@@ -1,6 +1,7 @@
 import Darwin
 import XCTest
 @testable import puremac
+import TerminalUI
 
 final class AnalyzeTests: XCTestCase {
     private var root: URL!
@@ -84,33 +85,221 @@ final class AnalyzeTests: XCTestCase {
         XCTAssertFalse(snapshot.errors.isEmpty)
     }
 
-    func testViewportKeepsSelectionVisibleAndWithinHeight() {
-        let children = (0..<20).map {
-            Analyze.Child(
-                path: "/tmp/item-\($0)",
-                size: Int64(20 - $0) * 1_024,
-                isDir: true,
-                isPackage: false,
-                inaccessibleCount: 0,
-                skippedCount: 0
-            )
-        }
-        let snapshot = Analyze.FolderSnapshot(
-            path: "/tmp",
+    private func child(_ path: String, size: Int64, isDir: Bool = true, isPackage: Bool = false, skipped: Int = 0) -> Analyze.Child {
+        Analyze.Child(path: path, size: size, isDir: isDir, isPackage: isPackage, inaccessibleCount: 0, skippedCount: skipped)
+    }
+
+    private func snapshot(
+        path: String = "/tmp",
+        children: [Analyze.Child],
+        inaccessible: Int = 0,
+        skipped: Int = 0,
+        errors: [String] = []
+    ) -> Analyze.FolderSnapshot {
+        Analyze.FolderSnapshot(
+            path: path,
             children: children,
             total: children.reduce(Int64(0)) { $0 + $1.size },
-            inaccessibleCount: 0,
-            skippedCount: 0,
-            errors: []
+            inaccessibleCount: inaccessible,
+            skippedCount: skipped,
+            errors: errors
         )
+    }
+
+    private func manyChildren(_ count: Int) -> [Analyze.Child] {
+        (0..<count).map { child("/tmp/item-\($0)", size: Int64(count - $0) * 1_024) }
+    }
+
+    func testViewportKeepsSelectionVisibleAndWithinHeight() {
+        let snapshot = snapshot(children: manyChildren(20))
         let visible = Analyze.visibleRowCount(snapshot: snapshot, selected: 17, width: 60, height: 14)
-        let offset = Analyze.adjustedOffset(0, selected: 17, count: children.count, visibleRows: visible)
+        let offset = Analyze.adjustedOffset(0, selected: 17, count: 20, visibleRows: visible)
         let level = Analyze.BrowserLevel(snapshot: snapshot, selected: 17, offset: offset)
-        let lines = Analyze.browserLines(level: level, width: 60, height: 14)
+        let lines = Analyze.renderBrowser(level: level, width: 60, height: 14).plainLines()
 
         XCTAssertGreaterThan(offset, 0)
-        XCTAssertLessThanOrEqual(lines.count, 14)
+        XCTAssertEqual(lines.count, 14)
         XCTAssertTrue(lines.joined(separator: "\n").contains("item-17"))
+    }
+
+    func testVisibleRowCountMatchesRowsDrawn() {
+        let long = "/Users/example/" + String(repeating: "deep-folder/", count: 12) + "target"
+        let cases: [(Analyze.FolderSnapshot, Int, Int, Int)] = [
+            (snapshot(children: manyChildren(30)), 3, 60, 24),
+            (snapshot(children: manyChildren(30)), 3, 40, 12),
+            (snapshot(children: [child(long, size: 4_096)] + manyChildren(30)), 0, 50, 30),
+            (snapshot(children: manyChildren(30), errors: ["/tmp/x: unavailable"]), 5, 80, 20),
+            (snapshot(children: [child(String(repeating: "x", count: 83), size: 10)] + manyChildren(30), errors: ["/tmp/x: unavailable"]), 0, 40, 12),
+        ]
+        for (snapshot, selected, width, height) in cases {
+            let visible = Analyze.visibleRowCount(snapshot: snapshot, selected: selected, width: width, height: height)
+            let level = Analyze.BrowserLevel(snapshot: snapshot, selected: selected)
+            let lines = Analyze.renderBrowser(level: level, width: width, height: height).plainLines()
+            XCTAssertEqual(lines.filter { $0.contains("█") || $0.contains("░") }.count, visible, "\(width)x\(height)")
+        }
+    }
+
+    func testBrowserWindowLayout() {
+        let snapshot = snapshot(
+            path: "/tmp",
+            children: [
+                child("/tmp/alpha", size: 3_000_000),
+                child("/tmp/beta.txt", size: 1_000_000, isDir: false, skipped: 1),
+                child("/tmp/Gamma.app", size: 1_000_000, isPackage: true),
+            ],
+            skipped: 2
+        )
+        let lines = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot), width: 60, height: 14).plainLines()
+
+        XCTAssertEqual(lines, [
+            "╭─ PureMac Space Explorer ─────────────────────────────────╮",
+            "│ /tmp                                                     │",
+            "│ 5 MB allocated  ·  3 items  ·  2 skipped                 │",
+            "│ › 3 MB       █████░░░ alpha/                             │",
+            "│   1 MB       ██░░░░░░ beta.txt !                         │",
+            "│   1 MB       ██░░░░░░ Gamma.app [package]                │",
+            "│                                                          │",
+            "│                                                          │",
+            "│                                                          │",
+            "│                                                          │",
+            "├──────────────────────────────────────────────────────────┤",
+            "│ Focused: /tmp/alpha                                      │",
+            "│ ↑↓ move  Enter/→ open  O reveal  ←/⌫ back  q/Esc exit    │",
+            "╰──────────────────────────────────────────────────────────╯",
+        ])
+    }
+
+    func testFocusedRowIsInverseAcrossContentWidth() {
+        let snapshot = snapshot(children: manyChildren(3))
+        let buffer = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot, selected: 1), width: 60, height: 14)
+
+        XCTAssertEqual(buffer[2, 4].style, TextStyle(color: .cyan, inverse: true))
+        XCTAssertTrue((2...57).allSatisfy { buffer[$0, 4].style.inverse })
+        XCTAssertFalse(buffer[1, 4].style.inverse)
+        XCTAssertFalse(buffer[58, 4].style.inverse)
+        XCTAssertFalse((2...57).contains { buffer[$0, 3].style.inverse || buffer[$0, 5].style.inverse })
+        XCTAssertEqual(buffer[16, 4].style, TextStyle(inverse: true))
+        XCTAssertTrue(buffer.lines(colors: false)[4].contains("›"))
+    }
+
+    func testGaugeUnfilledPartIsDim() {
+        let snapshot = snapshot(children: [child("/tmp/a", size: 1_000), child("/tmp/b", size: 1_000)])
+        let buffer = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot, selected: 1), width: 60, height: 14)
+        let row = buffer.plainLines()[3]
+        let filled = row.firstIndex(of: "█")!
+        let empty = row.firstIndex(of: "░")!
+        let column = { (index: String.Index) in Term.displayWidth(String(row[..<index])) }
+
+        XCTAssertFalse(buffer[column(filled), 3].style.dim)
+        XCTAssertTrue(buffer[column(empty), 3].style.dim)
+    }
+
+    func testScrollbarOnlyOverListRowsAndOnlyWhenRowsOverflow() {
+        let overflowing = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(children: manyChildren(30))), width: 60, height: 14
+        ).plainLines()
+        let thumbRows = overflowing.indices.filter { overflowing[$0].hasSuffix("┃") }
+        XCTAssertFalse(thumbRows.isEmpty)
+        XCTAssertTrue(thumbRows.allSatisfy { (3..<9).contains($0) })
+
+        let atEnd = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(children: manyChildren(30)), selected: 29, offset: 24), width: 60, height: 14
+        ).plainLines()
+        XCTAssertEqual(atEnd.indices.filter { atEnd[$0].hasSuffix("┃") }.max(), 9)
+
+        let fitting = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(children: manyChildren(3))), width: 60, height: 14
+        ).plainLines()
+        XCTAssertFalse(fitting.contains { $0.contains("┃") })
+    }
+
+    func testHeaderAndMeasuringStyles() {
+        let buffer = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(children: manyChildren(3))), width: 60, height: 14
+        )
+        XCTAssertTrue(buffer[2, 1].style.bold)
+        XCTAssertTrue(buffer[2, 2].style.dim)
+        XCTAssertTrue(Analyze.renderMeasuring("/tmp", width: 40, height: 12)[2, 1].style.dim)
+    }
+
+    func testVisibleRowCountKeepsAtLeastOneRowWhenTooSmall() {
+        let snapshot = snapshot(children: manyChildren(3))
+        XCTAssertEqual(Analyze.visibleRowCount(snapshot: snapshot, selected: 0, width: 80, height: 5), 1)
+    }
+
+    func testEmptyAndInaccessibleMessages() {
+        let empty = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot(children: [])), width: 60, height: 14)
+        XCTAssertEqual(empty.plainLines()[3], "│ No measurable items.                                     │")
+        XCTAssertTrue(empty[2, 3].style.dim)
+
+        let locked = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(children: [], inaccessible: 1)), width: 60, height: 14
+        )
+        XCTAssertTrue(locked.plainLines()[3].contains("Folder contents are inaccessible."))
+
+        let longPath = "/" + String(repeating: "x", count: 120)
+        let cramped = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(path: longPath, children: [])), width: 40, height: 12
+        ).plainLines()
+        XCTAssertTrue(cramped.contains { $0.hasPrefix("│ No measurable items.") })
+        XCTAssertEqual(cramped.filter { $0.hasPrefix("├") }.count, 1)
+        XCTAssertTrue(cramped[1].hasPrefix("│ /xxx"))
+        XCTAssertTrue(cramped[1].contains("…"))
+        XCTAssertTrue(cramped[1].hasSuffix("│"))
+        XCTAssertTrue(cramped.last!.hasPrefix("╰"))
+        XCTAssertEqual(locked[2, 3].style, TextStyle(color: .red))
+    }
+
+    func testFirstErrorIsShownInRedBelowFocusedPath() {
+        let snapshot = snapshot(children: manyChildren(2), errors: ["/tmp/x: unavailable", "/tmp/y: unavailable"])
+        let buffer = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot), width: 60, height: 14)
+        let lines = buffer.plainLines()
+
+        XCTAssertEqual(lines[11], "│ ! /tmp/x: unavailable                                    │")
+        XCTAssertEqual(buffer[2, 11].style, TextStyle(color: .red))
+        XCTAssertFalse(lines.joined().contains("/tmp/y"))
+    }
+
+    func testLongFocusedPathWrapsWithEveryCharacter() {
+        let path = "/tmp/" + String(repeating: "x", count: 70)
+        let snapshot = snapshot(children: [child(path, size: 10)])
+        let lines = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot), width: 40, height: 14).plainLines()
+        let wrapped = lines.filter { $0.contains("xxxx") && !$0.contains("█") }
+            .map { $0.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespaces) }
+            .map { $0.hasPrefix("Focused: ") ? String($0.dropFirst(9)) : $0 }
+
+        XCTAssertEqual(wrapped.joined(), path)
+    }
+
+    func testCrampedFocusedPathKeepsThreeListRowsAndBothPathEnds() {
+        let folder = "/Users/example/Projects/client-archive/2024/reports/preview"
+        let children = [child(folder + "/field-notes", size: 20_000)] + manyChildren(5)
+        let lines = Analyze.renderBrowser(
+            level: Analyze.BrowserLevel(snapshot: snapshot(path: folder, children: children)), width: 40, height: 12
+        ).plainLines()
+        let pathRows = lines.drop { !$0.contains("Focused: ") }.prefix { !$0.contains("↑↓") }
+            .map { $0.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespaces) }
+        let shownPath = pathRows.joined().replacingOccurrences(of: "Focused: ", with: "")
+
+        XCTAssertEqual(lines.filter { $0.contains("█") || $0.contains("░") }.count, 3)
+        XCTAssertTrue(shownPath.hasPrefix("/Users/example"))
+        XCTAssertTrue(shownPath.hasSuffix("/preview/field-notes"))
+        XCTAssertTrue(shownPath.contains("…"))
+    }
+
+    func testWideCharactersInCrampedFocusedPathKeepTheFileName() {
+        let folder = "/Users/ex/" + String(repeating: "例", count: 25) + "/reports"
+        let children = [child(folder + "/field-notes", size: 20_000)] + manyChildren(5)
+        for height in [12, 13, 14] {
+            let lines = Analyze.renderBrowser(
+                level: Analyze.BrowserLevel(snapshot: snapshot(path: folder, children: children)), width: 40, height: height
+            ).plainLines()
+            let pathRows = lines.drop { !$0.contains("Focused: ") }.prefix { !$0.contains("↑↓") }
+                .map { $0.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespaces) }
+            let shownPath = pathRows.joined().replacingOccurrences(of: "Focused: ", with: "")
+
+            XCTAssertTrue(shownPath.hasSuffix("/reports/field-notes"), "height \(height): \(shownPath)")
+        }
     }
 
     func testFocusedPathWrappingPreservesEveryCharacter() {
@@ -124,39 +313,37 @@ final class AnalyzeTests: XCTestCase {
 
     func testNarrowBrowserRenderStaysWithinViewport() {
         let path = "/Users/example/a folder/with/a/very-long-name/file.bin"
-        let child = Analyze.Child(
-            path: path,
-            size: 8_192,
-            isDir: false,
-            isPackage: false,
-            inaccessibleCount: 0,
-            skippedCount: 0
-        )
-        let snapshot = Analyze.FolderSnapshot(
-            path: "/Users/example/a folder",
-            children: [child],
-            total: child.size,
-            inaccessibleCount: 0,
-            skippedCount: 0,
-            errors: []
-        )
-        let lines = Analyze.browserLines(
-            level: Analyze.BrowserLevel(snapshot: snapshot),
-            width: 40,
-            height: 12
-        )
+        let snapshot = snapshot(path: "/Users/example/a folder", children: [child(path, size: 8_192, isDir: false)])
+        let level = Analyze.BrowserLevel(snapshot: snapshot)
+        let lines = Analyze.renderBrowser(level: level, width: 40, height: 12).plainLines()
 
-        XCTAssertLessThanOrEqual(lines.count, 12)
-        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) <= 40 })
+        XCTAssertEqual(lines.count, 12)
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines[0].hasPrefix("╭─ PureMac Space Explorer "))
         XCTAssertTrue(lines.joined(separator: "\n").contains("O reveal"))
         XCTAssertTrue(lines.joined(separator: "\n").contains("q/Esc exit"))
 
-        let tooSmall = Analyze.browserLines(
-            level: Analyze.BrowserLevel(snapshot: snapshot),
-            width: 39,
-            height: 11
+        XCTAssertEqual(
+            Analyze.renderBrowser(level: level, width: 39, height: 11),
+            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Esc/q exit", width: 39, height: 11)
         )
-        XCTAssertTrue(tooSmall.contains { $0.contains("Terminal too small") })
-        XCTAssertTrue(tooSmall.allSatisfy { Term.displayWidth($0) <= 39 })
+    }
+
+    func testMeasuringScreenShowsWindowWithTruncatedPath() {
+        let lines = Analyze.renderMeasuring("/Users/example/" + String(repeating: "a", count: 60), width: 40, height: 12).plainLines()
+
+        XCTAssertEqual(lines.count, 12)
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines[0].hasPrefix("╭─ PureMac Space Explorer "))
+        XCTAssertTrue(lines[1].contains("Measuring allocated space..."))
+        XCTAssertTrue(lines[2].contains("…"))
+        XCTAssertTrue(lines.joined().contains("Ctrl+C cancel"))
+    }
+
+    func testMeasuringScreenBelowMinimumUsesTooSmallScreen() {
+        XCTAssertEqual(
+            Analyze.renderMeasuring("/tmp", width: 39, height: 11),
+            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Ctrl+C cancel", width: 39, height: 11)
+        )
     }
 }

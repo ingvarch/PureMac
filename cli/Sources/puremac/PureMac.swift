@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import TerminalUI
 
 let puremacVersion = "1.1.1"
 

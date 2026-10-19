@@ -1,8 +1,10 @@
 import Darwin
 import Foundation
+import TerminalUI
 
 enum Render {
     static let rule = String(repeating: "─", count: 60)
+    static let sizeColumnWidth = 10
 
     static func scanResults(_ categories: [CategoryScan]) {
         let total = categories.reduce(Int64(0)) { $0 + $1.allBytes }
@@ -104,7 +106,7 @@ enum Render {
     }
 
     static func sizeCol(_ bytes: Int64) -> String {
-        pad(ByteCount.human(bytes), 10)
+        pad(ByteCount.human(bytes), sizeColumnWidth)
     }
 
     static func pad(_ string: String, _ width: Int) -> String {

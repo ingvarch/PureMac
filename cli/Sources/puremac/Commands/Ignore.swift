@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import TerminalUI
 
 struct Ignore: ParsableCommand {
     static let configuration = CommandConfiguration(

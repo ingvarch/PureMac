@@ -1,4 +1,5 @@
 import Foundation
+import TerminalUI
 
 struct ReviewAddress: Hashable {
     let category: Int
@@ -214,7 +215,7 @@ enum InteractiveReview {
 
         var model = InteractiveReviewModel(categories: categories)
         while true {
-            session.draw(lines: render(model: model, title: title, width: session.width, height: session.height))
+            session.draw(render(model: model, title: title, width: session.width, height: session.height))
             let key = session.readKey()
 
             if model.isSearching {
@@ -292,125 +293,151 @@ enum InteractiveReview {
         }
     }
 
+    private static let itemPrefixWidth = 5 + Render.sizeColumnWidth
+    private static let summaryGap = 2
+
     static func render(
         model: InteractiveReviewModel,
         title: String,
         width: Int,
         height: Int
-    ) -> [String] {
-        let safeWidth = max(1, width)
-        let safeHeight = max(1, height)
-        if safeWidth < 40 || safeHeight < 12 {
-            return compactScreen(width: safeWidth, height: safeHeight)
+    ) -> Buffer {
+        guard TooSmallScreen.fits(width: width, height: height) else {
+            return TooSmallScreen.render(title: "PureMac", exitHint: "Esc/q cancel", width: width, height: height)
         }
-        let titleText = Term.truncate(title, to: safeWidth - 2)
-        let selection = "\(model.selectedCount) selected · \(ByteCount.human(model.selectedBytes))"
-        let found = "\(model.matchingAddresses.count) shown · \(ByteCount.human(model.allBytes))"
-        var lines = [
-            Term.dim("PUREMAC  /  \(model.isReviewing ? "FINAL REVIEW" : "SELECT ITEMS")"),
-            Term.bold(Term.cyan(titleText)),
-            statusLine(left: found, right: selection, width: safeWidth)
-        ]
+        var buffer = Buffer(width: width, height: height)
+        let reviewing = model.isReviewing
+        let accent = TextStyle(color: .yellow)
+        let window = Window(
+            title: reviewing ? "Final review" : title,
+            info: "\(model.selectedCount) selected · \(ByteCount.human(model.selectedBytes))",
+            borderStyle: reviewing ? accent : TextStyle(dim: true),
+            titleStyle: TextStyle(color: reviewing ? .yellow : .cyan, bold: true)
+        )
+        let content = window.render(in: buffer.area, buffer: &buffer)
+        let hints = KeyHints(reviewing ? reviewHints : selectHints)
+        let areas = content.splitRows(
+            [.length(1), .fill, .length(1), .length(1), .length(hints.rows(width: content.width).count), .length(reviewing ? 1 : 0)]
+        )
+        let (header, list, divider, path, footer, confirmation) = (areas[0], areas[1], areas[2], areas[3], areas[4], areas[5])
 
-        if model.isSearching {
-            let query = Term.truncate(model.query, to: max(1, safeWidth - 10))
-            lines.append(Term.cyan("Search  ") + query + Term.inverse(" "))
-        } else if !model.status.isEmpty {
-            lines.append(Term.yellow(Term.truncate(model.status, to: safeWidth)))
-        } else if model.query.isEmpty {
-            lines.append("")
-        } else {
-            lines.append(Term.dim("Filter  ") + Term.truncate(model.query, to: max(1, safeWidth - 9)))
+        renderHeader(model: model, in: header, buffer: &buffer)
+        window.renderDivider(atRow: divider.y, in: buffer.area, buffer: &buffer)
+        buffer.write(focusedPathSpans(model: model, width: path.width), x: path.x, y: path.y, maxWidth: path.width)
+        hints.render(in: footer, buffer: &buffer)
+        if reviewing {
+            buffer.write("Command confirmation follows", x: confirmation.x, y: confirmation.y, style: accent, maxWidth: confirmation.width)
         }
 
-        let footerHeight = 5
-        let bodyHeight = max(3, safeHeight - lines.count - footerHeight)
-        let rows = model.displayRows(reviewing: model.isReviewing)
+        let rows = model.displayRows(reviewing: reviewing)
         let focusedAddress = model.focusedAddress
         let focusedRow = rows.firstIndex { row in
             if case .item(let address) = row { return address == focusedAddress }
             return false
         } ?? 0
-        let start = max(0, min(max(0, rows.count - bodyHeight), focusedRow - bodyHeight / 2))
-        let visibleRows = rows.dropFirst(start).prefix(bodyHeight)
-
-        for row in visibleRows {
-            switch row {
-            case .category(let categoryIndex):
-                let category = model.categories[categoryIndex]
-                let label = Term.truncate(Term.sanitize(category.title).uppercased(), to: safeWidth - 4)
-                lines.append("  " + Term.bold(Term.cyan(label)))
-            case .group(let categoryIndex, let groupIndex):
-                let group = model.categories[categoryIndex].groups[groupIndex]
-                let suffix = "\(group.items.count) \(group.items.count == 1 ? "item" : "items")"
-                let available = max(1, safeWidth - 8 - suffix.count)
-                lines.append("    " + Term.dim(Term.pad(Term.truncate(group.tool, to: available), to: available) + suffix))
-            case .item(let address):
-                let item = model.item(at: address)
-                let focused = address == focusedAddress
-                let mark = item.selected ? Term.cyan("●") : Term.dim("○")
-                let pointer = focused ? Term.cyan("›") : " "
-                let size = Term.pad(ByteCount.human(item.sizeBytes), to: 10)
-                let pathWidth = max(6, safeWidth - 17)
-                let path = Term.truncate(Render.shorten(item.path), to: pathWidth, middle: true)
-                let content = "\(pointer) \(mark) \(size) \(path)"
-                lines.append(focused ? Term.inverse(content) : content)
-            }
+        let start = Scrollbar.centeredOffset(total: rows.count, visible: list.height, focus: focusedRow)
+        for (index, row) in rows.enumerated().dropFirst(start).prefix(list.height) {
+            let rect = Rect(x: list.x, y: list.y + index - start, width: list.width, height: 1)
+            renderRow(row, focused: focusedAddress, model: model, in: rect, buffer: &buffer)
         }
+        Scrollbar(total: rows.count, visible: list.height, offset: start)
+            .render(column: width - 1, rows: list.y..<(list.y + list.height), buffer: &buffer)
+        return buffer
+    }
 
-        while lines.count < safeHeight - footerHeight {
-            lines.append("")
-        }
+    private static let selectHints = [
+        KeyHint("↑↓", "move"),
+        KeyHint("←→", "path"),
+        KeyHint("Space", "toggle"),
+        KeyHint("A", "all"),
+        KeyHint("N", "none"),
+        KeyHint("/", "search"),
+        KeyHint("Enter", "review"),
+        KeyHint("Esc/q", "cancel")
+    ]
 
-        let divider = String(repeating: "─", count: safeWidth)
-        lines.append(Term.dim(divider))
-        lines.append(focusedPathLine(model: model, width: safeWidth))
-        if model.isReviewing {
-            lines.append(Term.dim("↑↓ scroll  ←→ path"))
-            lines.append(Term.dim("Enter confirm  Esc edit"))
-            lines.append(Term.yellow("q cancel  command confirmation follows"))
+    private static let reviewHints = [
+        KeyHint("↑↓", "scroll"),
+        KeyHint("←→", "path"),
+        KeyHint("Enter", "confirm"),
+        KeyHint("Esc", "edit"),
+        KeyHint("q", "cancel")
+    ]
+
+    private static func renderHeader(model: InteractiveReviewModel, in rect: Rect, buffer: inout Buffer) {
+        let dim = TextStyle(dim: true)
+        let found = "\(model.matchingAddresses.count) shown · \(ByteCount.human(model.allBytes))"
+        let left: [Span]
+        if model.isSearching {
+            let label = "Search  "
+            let query = Term.truncate(model.query, to: max(1, rect.width - label.count - 1))
+            left = [Span(label, TextStyle(color: .cyan)), Span(query), Span(" ", TextStyle(inverse: true))]
+        } else if !model.status.isEmpty {
+            left = [Span(Term.truncate(model.status, to: rect.width), TextStyle(color: .yellow))]
+        } else if !model.query.isEmpty {
+            let label = "Filter  "
+            left = [Span(label + Term.truncate(model.query, to: max(1, rect.width - label.count)), dim)]
         } else {
-            lines.append(Term.dim("↑↓ move  ←→ path  Space toggle"))
-            lines.append(Term.dim("A all  N none  / search"))
-            lines.append(Term.dim("Enter review  Esc/q cancel"))
+            buffer.write(Term.truncate(found, to: rect.width), x: rect.x, y: rect.y, style: dim)
+            return
         }
-        return Array(lines.prefix(safeHeight))
-    }
-
-    private static func compactScreen(width: Int, height: Int) -> [String] {
-        let lines = [
-            Term.bold(Term.cyan(Term.truncate("PureMac", to: width))),
-            Term.truncate("Terminal too small", to: width),
-            Term.dim(Term.truncate("Resize to at least 40 x 12", to: width)),
-            "",
-            Term.dim(Term.truncate("Esc/q cancel", to: width))
-        ]
-        return Array(lines.prefix(height))
-    }
-
-    static func statusLine(left: String, right: String, width: Int) -> String {
-        let available = max(1, width - 2)
-        let leftWidth = Term.displayWidth(left)
-        let rightWidth = Term.displayWidth(right)
-        if leftWidth + rightWidth <= available {
-            return Term.pad(left, to: available - rightWidth) + "  " + Term.bold(right)
+        let leftWidth = buffer.write(left, x: rect.x, y: rect.y, maxWidth: rect.width)
+        let foundWidth = Term.displayWidth(found)
+        if leftWidth + summaryGap + foundWidth <= rect.width {
+            buffer.write(found, x: rect.x + rect.width - foundWidth, y: rect.y, style: dim)
         }
-
-        let rightBudget = min(rightWidth, max(1, available / 2))
-        let leftBudget = max(1, available - rightBudget)
-        let clippedLeft = Term.truncate(left, to: leftBudget)
-        let clippedRight = Term.truncate(right, to: rightBudget)
-        return Term.pad(clippedLeft, to: leftBudget) + "  " + Term.bold(clippedRight)
     }
 
-    private static func focusedPathLine(model: InteractiveReviewModel, width: Int) -> String {
+    private static func renderRow(
+        _ row: ReviewDisplayRow,
+        focused focusedAddress: ReviewAddress?,
+        model: InteractiveReviewModel,
+        in rect: Rect,
+        buffer: inout Buffer
+    ) {
+        switch row {
+        case .category(let categoryIndex):
+            let title = Term.truncate(model.categories[categoryIndex].title, to: rect.width)
+            buffer.write(title, x: rect.x, y: rect.y, style: TextStyle(bold: true), maxWidth: rect.width)
+        case .group(let categoryIndex, let groupIndex):
+            let group = model.categories[categoryIndex].groups[groupIndex]
+            let suffix = "\(group.items.count) \(group.items.count == 1 ? "item" : "items")"
+            let label = Term.truncate(group.tool, to: max(1, rect.width - suffix.count - 1))
+            buffer.write(
+                Term.pad(label, to: rect.width - suffix.count) + suffix,
+                x: rect.x,
+                y: rect.y,
+                style: TextStyle(dim: true),
+                maxWidth: rect.width
+            )
+        case .item(let address):
+            let item = model.item(at: address)
+            let focused = address == focusedAddress
+            let rowStyle = TextStyle(inverse: focused)
+            let pathWidth = max(1, rect.width - itemPrefixWidth)
+            let path = Term.truncate(Render.shorten(item.path), to: pathWidth, middle: true)
+            buffer.write(
+                [
+                    FocusPointer.span(focused: focused),
+                    Span(" ", rowStyle),
+                    Span(item.selected ? "●" : "○", TextStyle(color: item.selected ? .cyan : nil, dim: !item.selected, inverse: focused)),
+                    Span(" " + Render.sizeCol(item.sizeBytes) + " " + Term.pad(path, to: pathWidth), rowStyle)
+                ],
+                x: rect.x,
+                y: rect.y,
+                maxWidth: rect.width
+            )
+        }
+    }
+
+    private static func focusedPathSpans(model: InteractiveReviewModel, width: Int) -> [Span] {
+        let label = TextStyle(dim: true)
         guard let address = model.focusedAddress else {
-            return Term.dim("Path  No matching item")
+            return [Span("Path  No matching item", label)]
         }
         let path = Render.shorten(model.item(at: address).path)
-        let available = max(1, width - 6)
-        let window = horizontalWindow(path, offset: model.pathOffset, width: available)
-        return Term.dim("Path  ") + window
+        let window = horizontalWindow(path, offset: model.pathOffset, width: max(1, width - 6))
+        return [Span("Path  ", label), Span(window)]
     }
 
     static func horizontalWindow(_ value: String, offset: Int, width: Int) -> String {

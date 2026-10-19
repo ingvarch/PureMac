@@ -1,35 +1,33 @@
 import Darwin
 import Foundation
 
-enum Term {
+public enum Term {
     private static let localeConfigured: Void = {
         setlocale(LC_CTYPE, "")
     }()
 
-    static var colorEnabled: Bool {
+    public static var colorEnabled: Bool {
         ProcessInfo.processInfo.environment["NO_COLOR"] == nil
             && ProcessInfo.processInfo.environment["TERM"] != "dumb"
             && isatty(fileno(stdout)) == 1
     }
 
-    static func style(_ string: String, _ codes: String) -> String {
+    private static func style(_ string: String, _ codes: String) -> String {
         colorEnabled ? "\u{1B}[\(codes)m\(string)\u{1B}[0m" : string
     }
 
-    static func bold(_ string: String) -> String { style(string, "1") }
-    static func dim(_ string: String) -> String { style(string, "2") }
-    static func red(_ string: String) -> String { style(string, "31") }
-    static func green(_ string: String) -> String { style(string, "32") }
-    static func yellow(_ string: String) -> String { style(string, "33") }
-    static func blue(_ string: String) -> String { style(string, "34") }
-    static func cyan(_ string: String) -> String { style(string, "36") }
-    static func inverse(_ string: String) -> String { style(string, "7") }
+    public static func bold(_ string: String) -> String { style(string, "1") }
+    public static func dim(_ string: String) -> String { style(string, "2") }
+    public static func red(_ string: String) -> String { style(string, "31") }
+    public static func green(_ string: String) -> String { style(string, "32") }
+    public static func yellow(_ string: String) -> String { style(string, "33") }
+    public static func cyan(_ string: String) -> String { style(string, "36") }
 
-    static func err(_ string: String) {
+    public static func err(_ string: String) {
         FileHandle.standardError.write(Data((string + "\n").utf8))
     }
 
-    static func confirm(_ prompt: String, default defaultValue: Bool = false) -> Bool {
+    public static func confirm(_ prompt: String, default defaultValue: Bool = false) -> Bool {
         guard isatty(fileno(stdin)) == 1 else { return defaultValue }
         let hint = defaultValue ? "[Y/n]" : "[y/N]"
         print("\(sanitize(prompt)) \(hint) ", terminator: "")
@@ -39,15 +37,18 @@ enum Term {
         return answer == "y" || answer == "yes"
     }
 
-    static func bar(fraction: Double, width: Int = 24) -> String {
-        let safeWidth = max(0, width)
-        let clamped = max(0, min(1, fraction))
-        let filled = Int((Double(safeWidth) * clamped).rounded())
+    public static func bar(fraction: Double, width: Int = 24) -> String {
+        let filled = filledCount(fraction: fraction, width: width)
         return String(repeating: "█", count: filled)
-            + String(repeating: "░", count: safeWidth - filled)
+            + String(repeating: "░", count: max(0, width) - filled)
     }
 
-    static func sanitize(_ string: String) -> String {
+    static func filledCount(fraction: Double, width: Int) -> Int {
+        let clamped = max(0, min(1, fraction))
+        return Int((Double(max(0, width)) * clamped).rounded())
+    }
+
+    public static func sanitize(_ string: String) -> String {
         var output = ""
         output.reserveCapacity(string.count)
         for scalar in string.unicodeScalars {
@@ -67,7 +68,7 @@ enum Term {
         return output
     }
 
-    static func displayWidth(_ string: String) -> Int {
+    public static func displayWidth(_ string: String) -> Int {
         _ = localeConfigured
         var width = 0
         var escapeState = 0
@@ -92,12 +93,12 @@ enum Term {
         return width
     }
 
-    static func pad(_ string: String, to width: Int) -> String {
+    public static func pad(_ string: String, to width: Int) -> String {
         let missing = max(0, width - displayWidth(string))
         return string + String(repeating: " ", count: missing)
     }
 
-    static func truncate(_ string: String, to width: Int, middle: Bool = false) -> String {
+    public static func truncate(_ string: String, to width: Int, middle: Bool = false) -> String {
         let safe = sanitize(string)
         guard width > 0 else { return "" }
         guard displayWidth(safe) > width else { return safe }

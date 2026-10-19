@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-enum TerminalKey: Equatable {
+public enum TerminalKey: Equatable {
     case up
     case down
     case left
@@ -19,7 +19,7 @@ enum TerminalKey: Equatable {
     case unknown
 }
 
-enum TerminalSessionError: Error {
+public enum TerminalSessionError: Error {
     case unsupported
     case setupFailed
 }
@@ -75,8 +75,8 @@ private func terminalExitHandler() {
     terminalRestore()
 }
 
-final class TerminalSession {
-    static var isSupported: Bool {
+public final class TerminalSession {
+    public static var isSupported: Bool {
         isatty(STDIN_FILENO) == 1
             && isatty(STDOUT_FILENO) == 1
             && ProcessInfo.processInfo.environment["TERM"] != "dumb"
@@ -84,15 +84,15 @@ final class TerminalSession {
 
     private var isClosed = false
 
-    var width: Int {
+    public var width: Int {
         terminalDimensions().width
     }
 
-    var height: Int {
+    public var height: Int {
         terminalDimensions().height
     }
 
-    init() throws {
+    public init() throws {
         guard Self.isSupported else {
             throw TerminalSessionError.unsupported
         }
@@ -138,14 +138,18 @@ final class TerminalSession {
         close()
     }
 
-    func draw(lines: [String]) {
-        guard !isClosed else { return }
+    static func frame(lines: [String], height: Int) -> String {
         let visibleLines = Array(lines.prefix(max(1, height)))
-        let frame = visibleLines.map { "\u{1B}[2K" + $0 }.joined(separator: "\r\n")
-        terminalWrite("\u{1B}[H" + frame + "\u{1B}[J")
+        let body = visibleLines.map { "\u{1B}[2K" + $0 }.joined(separator: "\r\n")
+        return "\u{1B}[H" + body + (visibleLines.count < height ? "\u{1B}[J" : "")
     }
 
-    func readKey() -> TerminalKey {
+    public func draw(_ buffer: Buffer) {
+        guard !isClosed else { return }
+        terminalWrite(Self.frame(lines: buffer.lines(), height: height))
+    }
+
+    public func readKey() -> TerminalKey {
         guard !isClosed, let first = readByte() else { return .escape }
 
         switch first {
@@ -164,7 +168,7 @@ final class TerminalSession {
         }
     }
 
-    func close() {
+    public func close() {
         guard !isClosed else { return }
         isClosed = true
         terminalRestore()

@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import TerminalUI
 
 struct Analyze: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -241,7 +242,7 @@ struct Analyze: ParsableCommand {
     private func browse(_ target: String, ignore: IgnoreStore) throws {
         let session = try TerminalSession()
         defer { session.close() }
-        session.draw(lines: measuringLines(target, width: session.width))
+        session.draw(Self.renderMeasuring(target, width: session.width, height: session.height))
         var levels = [BrowserLevel(snapshot: scanFolder(target, ignore: ignore))]
         var running = true
 
@@ -254,7 +255,7 @@ struct Analyze: ParsableCommand {
                 count: levels[index].snapshot.children.count,
                 visibleRows: visibleRows
             )
-            session.draw(lines: Self.browserLines(level: levels[index], width: session.width, height: session.height))
+            session.draw(Self.renderBrowser(level: levels[index], width: session.width, height: session.height))
 
             switch session.readKey() {
             case .up:
@@ -271,7 +272,7 @@ struct Analyze: ParsableCommand {
                 levels[index].selected = max(0, levels[index].snapshot.children.count - 1)
             case .enter, .right:
                 guard let child = Self.focusedChild(levels[index]), child.isDir, !child.isPackage else { continue }
-                session.draw(lines: measuringLines(child.path, width: session.width))
+                session.draw(Self.renderMeasuring(child.path, width: session.width, height: session.height))
                 levels.append(BrowserLevel(snapshot: scanFolder(child.path, ignore: ignore)))
             case .left, .backspace:
                 if levels.count > 1 { levels.removeLast() }
@@ -290,66 +291,151 @@ struct Analyze: ParsableCommand {
         }
     }
 
-    private func measuringLines(_ path: String, width: Int) -> [String] {
-        let safeWidth = max(1, width)
-        return [
-            Term.bold(Term.cyan(Term.truncate("PureMac Space Explorer", to: safeWidth))),
-            "",
-            Term.dim(Term.truncate("Measuring allocated space...", to: safeWidth)),
-            Term.truncate(path, to: safeWidth, middle: true),
-            "",
-            Term.dim(Term.truncate("Ctrl+C cancel", to: safeWidth))
-        ]
+    static func renderMeasuring(_ path: String, width: Int, height: Int) -> Buffer {
+        guard TooSmallScreen.fits(width: width, height: height) else {
+            return TooSmallScreen.render(title: windowTitle, exitHint: "Ctrl+C cancel", width: width, height: height)
+        }
+        var buffer = Buffer(width: width, height: height)
+        let content = window.render(in: buffer.area, buffer: &buffer)
+        let cancelHint = KeyHints([KeyHint("Ctrl+C", "cancel")])
+        let areas = content.splitRows([.length(2), .fill, .length(1), .length(cancelHint.rows(width: content.width).count)])
+        let (header, divider, footer) = (areas[0], areas[2], areas[3])
+
+        buffer.write("Measuring allocated space...", x: header.x, y: header.y, style: TextStyle(dim: true), maxWidth: header.width)
+        buffer.write(Term.truncate(path, to: header.width, middle: true), x: header.x, y: header.y + 1)
+        window.renderDivider(atRow: divider.y, in: buffer.area, buffer: &buffer)
+        cancelHint.render(in: footer, buffer: &buffer)
+        return buffer
     }
 
-    static func browserLines(level: BrowserLevel, width: Int, height: Int) -> [String] {
-        let safeWidth = max(1, width)
-        let safeHeight = max(1, height)
-        if safeWidth < 40 || safeHeight < 12 {
-            let compact = [
-                Term.bold(Term.cyan(Term.truncate("PureMac Space Explorer", to: safeWidth))),
-                Term.truncate("Terminal too small", to: safeWidth),
-                Term.dim(Term.truncate("Resize to at least 40 x 12", to: safeWidth)),
-                "",
-                Term.dim(Term.truncate("Esc/q exit", to: safeWidth))
-            ]
-            return Array(compact.prefix(safeHeight))
-        }
-        let snapshot = level.snapshot
-        let pathLines = wrap(focusedChild(level)?.path ?? snapshot.path, width: max(1, safeWidth - 9))
-        let visibleRows = visibleRowCount(snapshot: snapshot, selected: level.selected, width: safeWidth, height: safeHeight)
-        let upperBound = min(snapshot.children.count, level.offset + visibleRows)
-        let rows = level.offset < upperBound
-            ? snapshot.children[level.offset..<upperBound].enumerated().map { offset, child in
-                row(child, focused: level.offset + offset == level.selected, total: snapshot.total, width: safeWidth)
-            }
-            : []
+    private static let windowTitle = "PureMac Space Explorer"
+    private static let focusedLabel = "Focused: "
+    private static let window = Window(title: windowTitle)
+    private static let rowPrefixWidth = 4 + Render.sizeColumnWidth
+    private static let minimumGaugeWidth = 6
+    private static let maximumGaugeWidth = 20
+    private static let gaugeReservedWidth = 32
+    private static let headerRows = 2
+    private static let dividerRows = 1
+    private static let minimumListRows = 3
+    private static let browserHints = KeyHints([
+        KeyHint("↑↓", "move"),
+        KeyHint("Enter/→", "open"),
+        KeyHint("O", "reveal"),
+        KeyHint("←/⌫", "back"),
+        KeyHint("q/Esc", "exit")
+    ])
 
-        var lines = [
-            Term.bold(Term.cyan("PureMac Space Explorer")),
-            Term.truncate(snapshot.path, to: safeWidth, middle: true),
-            statusLine(snapshot, width: safeWidth),
-            String(repeating: "─", count: safeWidth)
-        ]
-        lines.append(contentsOf: rows.isEmpty
-            ? [snapshot.inaccessibleCount > 0 ? Term.red("Folder contents are inaccessible.") : Term.dim("No measurable items.")]
-            : rows)
-        lines.append(String(repeating: "─", count: safeWidth))
-        lines.append(Term.dim("↑↓ move  Enter/→ open  O reveal"))
-        lines.append(Term.dim("←/⌫ back  q/Esc exit"))
-        for (index, line) in pathLines.enumerated() {
-            lines.append((index == 0 ? Term.dim("Focused: ") : String(repeating: " ", count: 9)) + line)
+    private struct BrowserLayout {
+        let header: Rect
+        let list: Rect
+        let divider: Rect
+        let path: Rect
+        let error: Rect
+        let footer: Rect
+        let pathLines: [String]
+
+        var visibleRows: Int { max(1, list.height) }
+    }
+
+    private static func layout(snapshot: FolderSnapshot, selected: Int, width: Int, height: Int) -> BrowserLayout {
+        let content = window.contentRect(in: Rect(x: 0, y: 0, width: width, height: height))
+        let focusedPath = snapshot.children.indices.contains(selected) ? snapshot.children[selected].path : snapshot.path
+        let pathWidth = max(1, content.width - focusedLabel.count)
+        let hintRows = browserHints.rows(width: content.width).count
+        let errorRows = snapshot.errors.isEmpty ? 0 : 1
+        let spareRows = content.height - headerRows - dividerRows - errorRows - hintRows - minimumListRows
+        var pathLines = wrap(focusedPath, width: pathWidth)
+        let pathRows = min(pathLines.count, max(1, spareRows))
+        var budget = pathRows * pathWidth
+        while pathLines.count > pathRows && budget > 1 {
+            pathLines = wrap(Term.truncate(focusedPath, to: budget, middle: true), width: pathWidth)
+            budget -= 1
+        }
+        let areas = content.splitRows(
+            [.length(headerRows), .fill, .length(dividerRows), .length(pathRows), .length(errorRows), .length(hintRows)]
+        )
+        return BrowserLayout(
+            header: areas[0],
+            list: areas[1],
+            divider: areas[2],
+            path: areas[3],
+            error: areas[4],
+            footer: areas[5],
+            pathLines: pathLines
+        )
+    }
+
+    static func renderBrowser(level: BrowserLevel, width: Int, height: Int) -> Buffer {
+        guard TooSmallScreen.fits(width: width, height: height) else {
+            return TooSmallScreen.render(title: windowTitle, exitHint: "Esc/q exit", width: width, height: height)
+        }
+        var buffer = Buffer(width: width, height: height)
+        let snapshot = level.snapshot
+        window.render(in: buffer.area, buffer: &buffer)
+        let layout = layout(snapshot: snapshot, selected: level.selected, width: width, height: height)
+
+        buffer.write(
+            Term.truncate(snapshot.path, to: layout.header.width, middle: true),
+            x: layout.header.x,
+            y: layout.header.y,
+            style: TextStyle(bold: true)
+        )
+        buffer.write(
+            statusLine(snapshot, width: layout.header.width),
+            x: layout.header.x,
+            y: layout.header.y + 1,
+            style: TextStyle(dim: true)
+        )
+        window.renderDivider(atRow: layout.divider.y, in: buffer.area, buffer: &buffer)
+        renderRows(level: level, in: layout.list, buffer: &buffer)
+        Scrollbar(total: snapshot.children.count, visible: layout.visibleRows, offset: level.offset)
+            .render(column: width - 1, rows: layout.list.y..<(layout.list.y + layout.list.height), buffer: &buffer)
+
+        for (index, line) in layout.pathLines.prefix(layout.path.height).enumerated() {
+            let label = index == 0 ? focusedLabel : String(repeating: " ", count: focusedLabel.count)
+            buffer.write(
+                [Span(label, TextStyle(dim: true)), Span(line)],
+                x: layout.path.x,
+                y: layout.path.y + index,
+                maxWidth: layout.path.width
+            )
         }
         if let error = snapshot.errors.first {
-            lines.append(Term.red("! ") + Term.truncate(error, to: max(1, safeWidth - 2), middle: true))
+            let area = layout.error
+            buffer.write(
+                [Span("! ", TextStyle(color: .red)), Span(Term.truncate(error, to: max(1, area.width - 2), middle: true))],
+                x: area.x,
+                y: area.y,
+                maxWidth: area.width
+            )
         }
-        return Array(lines.prefix(safeHeight))
+        browserHints.render(in: layout.footer, buffer: &buffer)
+        return buffer
+    }
+
+    private static func renderRows(level: BrowserLevel, in list: Rect, buffer: inout Buffer) {
+        let snapshot = level.snapshot
+        let upperBound = min(snapshot.children.count, level.offset + list.height)
+        guard level.offset < upperBound else {
+            let inaccessible = snapshot.inaccessibleCount > 0
+            buffer.write(
+                inaccessible ? "Folder contents are inaccessible." : "No measurable items.",
+                x: list.x,
+                y: list.y,
+                style: inaccessible ? TextStyle(color: .red) : TextStyle(dim: true),
+                maxWidth: list.width
+            )
+            return
+        }
+        for (offset, child) in snapshot.children[level.offset..<upperBound].enumerated() {
+            let rect = Rect(x: list.x, y: list.y + offset, width: list.width, height: 1)
+            renderRow(child, focused: level.offset + offset == level.selected, total: snapshot.total, in: rect, buffer: &buffer)
+        }
     }
 
     static func visibleRowCount(snapshot: FolderSnapshot, selected: Int, width: Int, height: Int) -> Int {
-        let focusedPath = snapshot.children.indices.contains(selected) ? snapshot.children[selected].path : snapshot.path
-        let pathLines = wrap(focusedPath, width: max(1, max(1, width) - 9)).count
-        return max(1, height - 7 - pathLines - (snapshot.errors.isEmpty ? 0 : 1))
+        layout(snapshot: snapshot, selected: selected, width: width, height: height).visibleRows
     }
 
     static func adjustedOffset(_ offset: Int, selected: Int, count: Int, visibleRows: Int) -> Int {
@@ -366,16 +452,27 @@ struct Analyze: ParsableCommand {
         return level.snapshot.children[level.selected]
     }
 
-    private static func row(_ child: Child, focused: Bool, total: Int64, width: Int) -> String {
+    private static func renderRow(_ child: Child, focused: Bool, total: Int64, in rect: Rect, buffer: inout Buffer) {
         let fraction = total > 0 ? Double(child.size) / Double(total) : 0
-        let size = Render.pad(ByteCount.human(child.size), 10)
-        let barWidth = min(20, max(6, (width - 32) / 3))
+        let barWidth = min(maximumGaugeWidth, max(minimumGaugeWidth, (rect.width - gaugeReservedWidth) / 3))
         let suffix = child.isDir && !child.isPackage ? "/" : (child.isPackage ? " [package]" : "")
         let partial = child.isPartial ? " !" : ""
-        let nameWidth = max(1, width - 14 - barWidth - partial.count)
+        let nameColumn = rect.width - rowPrefixWidth - barWidth
+        let nameWidth = max(1, nameColumn - partial.count)
         let name = Term.truncate(URL(fileURLWithPath: child.path).lastPathComponent + suffix, to: nameWidth, middle: true)
-        let line = "\(focused ? "›" : " ") \(size) \(Term.bar(fraction: fraction, width: barWidth)) \(name)\(partial)"
-        return focused ? Term.inverse(Term.pad(line, to: width)) : line
+        let rowStyle = TextStyle(inverse: focused)
+        let gauge = Gauge(fraction: fraction).spans(width: barWidth).map {
+            Span($0.text, TextStyle(dim: $0.style.dim, inverse: focused))
+        }
+        buffer.write(
+            [FocusPointer.span(focused: focused),
+             Span(" " + Render.sizeCol(child.size) + " ", rowStyle)]
+                + gauge
+                + [Span(" " + Term.pad(name + partial, to: nameColumn), rowStyle)],
+            x: rect.x,
+            y: rect.y,
+            maxWidth: rect.width
+        )
     }
 
     private static func statusLine(_ snapshot: FolderSnapshot, width: Int) -> String {
