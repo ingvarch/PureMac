@@ -18,19 +18,27 @@ enum Purger {
         artifactNames.contains(name) || artifactPrefixes.contains { name.hasPrefix($0) }
     }
 
-    static func scan(roots: [String], olderThanDays: Int, ignore: IgnoreStore) -> CategoryScan {
+    static func scan(
+        roots: [String],
+        olderThanDays: Int,
+        ignore: IgnoreStore,
+        progress: ((PurgeScanEvent) -> Void)? = nil,
+        isCancelled: () -> Bool = { false }
+    ) -> CategoryScan {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-Double(olderThanDays) * 86_400)
         var byProject: [String: [ScanItem]] = [:]
         var order: [String] = []
 
-        for rootURL in scanRoots(roots) {
+        walk: for rootURL in scanRoots(roots) {
+            progress?(.root(rootURL.path))
             guard let en = fm.enumerator(at: rootURL,
                                          includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
                                          options: [.skipsPackageDescendants],
                                          errorHandler: { _, _ in true }) else { continue }
 
             for case let url as URL in en {
+                if isCancelled() { break walk }
                 let name = url.lastPathComponent
                 let vals = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
                 if vals?.isSymbolicLink == true { en.skipDescendants(); continue }
@@ -40,6 +48,8 @@ enum Purger {
                     en.skipDescendants()
                     continue
                 }
+
+                progress?(.walking(url.path))
 
                 if isArtifact(name) {
                     en.skipDescendants()
@@ -51,6 +61,7 @@ enum Purger {
                     let old = (mod ?? .distantFuture) < cutoff
                     let project = projectLabel(url, level: en.level, root: rootURL)
                     let item = ScanItem(path: url.path, sizeBytes: measurement.bytes, modified: mod, selected: old)
+                    progress?(.found(bytes: measurement.bytes))
                     byProject[project, default: []].append(item)
                     if !order.contains(project) { order.append(project) }
                 }

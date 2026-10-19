@@ -1,16 +1,34 @@
 import TerminalUI
 
-enum ExploreChoice: Equatable {
+enum StartChoice: Equatable {
     case start, back
 }
 
-struct ExploreConfirmation {
+struct StartConfirmation {
+    let title: String
+    let message: String
+    let menuSelection: Int
+
+    static let explore = StartConfirmation(
+        title: "Explore your home folder?",
+        message: "Measuring every folder can take a few minutes.",
+        menuSelection: HomeMenu.exploreIndex
+    )
+
+    static func projectCleanup(folderCount: Int) -> StartConfirmation {
+        StartConfirmation(
+            title: "Scan your project folders?",
+            message: "Searching \(CleanupFlow.counted(folderCount, "folder")) for build artifacts can take a few minutes.",
+            menuSelection: HomeMenu.projectCleanupIndex
+        )
+    }
+
     private static let buttons = [DialogButton("Cancel"), DialogButton("Start")]
     static let startIndex = buttons.count - 1
 
     private(set) var focus = ButtonFocus(count: buttons.count, index: startIndex)
 
-    mutating func handle(_ key: TerminalKey) -> ExploreChoice? {
+    mutating func handle(_ key: TerminalKey) -> StartChoice? {
         if focus.navigate(key) { return nil }
         switch key {
         case .enter:
@@ -29,21 +47,13 @@ struct ExploreConfirmation {
     }
 
     func render(width: Int, height: Int) -> Buffer {
-        let menu = TerminalMenu.render(
-            title: HomeMenu.title,
-            subtitle: HomeMenu.subtitle,
-            options: HomeMenu.options,
-            selection: HomeMenu.exploreIndex,
-            width: width,
-            height: height
-        )
-        return StatusScreen.overlay(dialog, on: menu, tooSmallExitHint: "Esc back")
+        StatusScreen.overlay(dialog, on: HomeMenu.screen(selection: menuSelection, width: width, height: height), tooSmallExitHint: "Esc back")
     }
 
-    static func ask() throws -> Bool {
+    func ask() throws -> Bool {
         let session = try TerminalSession()
         defer { session.close() }
-        var model = ExploreConfirmation()
+        var model = self
         while true {
             session.draw(model.render(width: session.width, height: session.height))
             if let choice = model.handle(session.readKey()) { return choice == .start }
@@ -52,8 +62,8 @@ struct ExploreConfirmation {
 
     private var dialog: Dialog {
         Dialog(
-            title: "Explore your home folder?",
-            message: [Span("Measuring every folder can take a few minutes.")],
+            title: title,
+            message: [Span(message)],
             buttons: Self.buttons,
             focusedButton: focus.index,
             hints: StatusScreen.choiceHints

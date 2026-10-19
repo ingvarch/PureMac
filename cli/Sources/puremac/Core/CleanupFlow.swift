@@ -27,21 +27,37 @@ enum CleanupFlow {
         let empty: String
         let reviewTitle: String
         let noun: String
+
+        var initialStatus: ScanStatus { ScanStatus(headline: scanning) }
     }
+
+    typealias Scan = (WorkProgress<ScanStatus>, CancelFlag) -> [CategoryScan]
 
     static func run(
         labels: Labels,
         ignore: IgnoreStore,
-        scan: () -> [CategoryScan]
+        scan: @escaping Scan
     ) throws -> CleanupFlowResult {
         let session = try TerminalSession()
         defer { session.close() }
 
-        session.draw(scanningScreen(labels: labels, width: session.width, height: session.height))
-        let categories = scan()
+        var scanCancelled = false
+        let categories = session.runWithSpinner(
+            progress: labels.initialStatus,
+            render: { tick, status in
+                scanningScreen(status: status, tick: tick, width: session.width, height: session.height)
+            },
+            onKey: { key, cancel in
+                if cancelsScan(key) {
+                    scanCancelled = true
+                    cancel.cancel()
+                }
+            },
+            work: scan
+        )
+        if scanCancelled { return .cancelled }
         guard !categories.isEmpty else {
-            session.draw(emptyScreen(labels: labels, width: session.width, height: session.height))
-            while !closesInfoDialog(session.readKey()) {}
+            showInfo(on: session) { emptyScreen(labels: labels, width: session.width, height: session.height) }
             return .nothingFound
         }
 
@@ -64,8 +80,9 @@ enum CleanupFlow {
                 }
             }
         )
-        session.draw(resultScreen(outcome: outcome, review: review, labels: labels, width: session.width, height: session.height))
-        while !closesInfoDialog(session.readKey()) {}
+        showInfo(on: session) {
+            resultScreen(outcome: outcome, review: review, labels: labels, width: session.width, height: session.height)
+        }
         return .finished(outcome)
     }
 
@@ -82,34 +99,53 @@ enum CleanupFlow {
     }
 
     static func closesInfoDialog(_ key: TerminalKey) -> Bool {
+        key == .enter || isEscapeOrQ(key)
+    }
+
+    static func showInfo(on session: TerminalSession, _ screen: () -> Buffer) {
+        repeat {
+            session.draw(screen())
+        } while !closesInfoDialog(session.readKey())
+    }
+
+    static func cancelsScan(_ key: TerminalKey) -> Bool {
+        isEscapeOrQ(key)
+    }
+
+    private static func isEscapeOrQ(_ key: TerminalKey) -> Bool {
         switch key {
-        case .enter, .escape: return true
+        case .escape: return true
         case .character(let character): return character.lowercased() == "q"
         default: return false
         }
     }
 
-    static func scanningScreen(labels: Labels, width: Int, height: Int) -> Buffer {
+    static func scanningScreen(status: ScanStatus, tick: Int, width: Int, height: Int) -> Buffer {
         StatusScreen.render(
             title: "PureMac",
-            message: labels.scanning,
-            detail: nil,
-            hint: StatusScreen.cancelHint,
+            rows: [
+                StatusRow(Spinner.frame(tick: tick) + " " + status.headline, truncatesInMiddle: true),
+                StatusRow(status.folder.map(Render.shorten) ?? "", style: TextStyle(dim: true), truncatesInMiddle: true),
+                StatusRow("Found \(counted(status.foundCount, "item")) · \(ByteCount.human(status.foundBytes))")
+            ],
+            hint: StatusScreen.scanHint,
             width: width,
             height: height
         )
     }
 
     static func emptyScreen(labels: Labels, width: Int, height: Int) -> Buffer {
-        let dialog = Dialog(
+        infoScreen(
             title: "Nothing to clean",
-            message: [Span(labels.empty)],
-            buttons: [DialogButton("OK")],
-            focusedButton: 0
+            message: labels.empty,
+            on: scanningScreen(status: labels.initialStatus, tick: 0, width: width, height: height)
         )
-        return StatusScreen.overlay(
-            dialog,
-            on: scanningScreen(labels: labels, width: width, height: height),
+    }
+
+    static func infoScreen(title: String, message: String, on background: Buffer) -> Buffer {
+        StatusScreen.overlay(
+            Dialog(title: title, message: [Span(message)], buttons: [DialogButton("OK")], focusedButton: 0),
+            on: background,
             tooSmallExitHint: closeHint
         )
     }

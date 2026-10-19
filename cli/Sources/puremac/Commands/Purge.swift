@@ -62,7 +62,7 @@ struct Purge: ParsableCommand {
             return
         }
 
-        let scanning = "Scanning " + roots.map { Render.shorten($0) }.joined(separator: ", ") + " …"
+        let scanning = "Scanning " + roots.map { Render.shorten($0) }.joined(separator: ", ")
         if mode == .fullscreen {
             let labels = CleanupFlow.Labels(
                 scanning: scanning,
@@ -70,14 +70,18 @@ struct Purge: ParsableCommand {
                 reviewTitle: "Choose project artifacts",
                 noun: "artifact"
             )
-            let result = try CleanupFlow.run(labels: labels, ignore: ignore) {
-                let cat = Purger.scan(roots: roots, olderThanDays: days, ignore: ignore)
+            let result = try CleanupFlow.run(labels: labels, ignore: ignore) { status, cancel in
+                let cat = Purger.scan(
+                    roots: roots, olderThanDays: days, ignore: ignore,
+                    progress: { event in status.update { $0.apply(event) } },
+                    isCancelled: { cancel.isCancelled }
+                )
                 return cat.groups.isEmpty ? [] : [cat]
             }
             try CleanupFlow.finish(result, labels: labels)
             return
         }
-        if !json { Term.err(Term.dim(scanning)) }
+        if !json { Term.err(Term.dim(scanning + " …")) }
         let cat = Purger.scan(roots: roots, olderThanDays: days, ignore: ignore)
 
         if json { print(try JSONReport.string([cat])); return }

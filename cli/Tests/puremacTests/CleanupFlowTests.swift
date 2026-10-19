@@ -5,17 +5,75 @@ import TerminalUI
 
 final class CleanupFlowTests: XCTestCase {
     private let labels = CleanupFlow.Labels(
-        scanning: "Scanning Developer caches …",
+        scanning: "Scanning Developer caches",
         empty: "No cleanup candidates found in readable locations.",
         reviewTitle: "Choose items to clean",
         noun: "item"
     )
 
-    func testScanningScreenUsesPureMacTitleMessageAndCancelHint() {
-        let lines = CleanupFlow.scanningScreen(labels: labels, width: 60, height: 14).plainLines()
+    func testScanningScreenUsesPureMacTitleHeadlineWithSpinnerAndCancelHint() {
+        let status = ScanStatus(headline: "Scanning Developer caches, 2 of 4")
+        let lines = CleanupFlow.scanningScreen(status: status, tick: 0, width: 60, height: 14).plainLines()
         XCTAssertTrue(lines[0].hasPrefix("╭─ PureMac "))
-        XCTAssertTrue(lines[1].contains("Scanning Developer caches …"))
-        XCTAssertTrue(lines.contains { $0.contains("Ctrl+C cancel") })
+        XCTAssertTrue(lines[1].contains("⠋ Scanning Developer caches, 2 of 4"))
+        XCTAssertTrue(lines.contains { $0.contains("Esc/q cancel") })
+    }
+
+    func testScanningScreenSpinnerFollowsTheTick() {
+        let status = ScanStatus(headline: "Scanning")
+        let lines = CleanupFlow.scanningScreen(status: status, tick: 3, width: 60, height: 14).plainLines()
+        XCTAssertTrue(lines[1].contains("\(Spinner.frame(tick: 3)) Scanning"))
+    }
+
+    func testScanningScreenShowsTheFolderBeingWalkedDimAndTheFoundSoFar() {
+        let status = ScanStatus(headline: "Scanning ~/Projects", folder: "/tmp/a/b", foundCount: 3, foundBytes: 2_000_000)
+        let buffer = CleanupFlow.scanningScreen(status: status, tick: 0, width: 60, height: 14)
+        let lines = buffer.plainLines()
+        XCTAssertTrue(lines[2].contains("/tmp/a/b"))
+        XCTAssertTrue(buffer[2, 2].style.dim)
+        XCTAssertTrue(lines[3].contains("Found 3 items · \(ByteCount.human(2_000_000))"), lines[3])
+        XCTAssertFalse(buffer[2, 3].style.dim)
+    }
+
+    func testScanningScreenFoundRowUsesTheSingularAndStartsAtZero() {
+        let none = CleanupFlow.scanningScreen(status: ScanStatus(headline: "Scanning"), tick: 0, width: 60, height: 14).plainLines()
+        XCTAssertTrue(none[3].contains("Found 0 items · \(ByteCount.human(0))"), none[3])
+        let one = CleanupFlow.scanningScreen(
+            status: ScanStatus(headline: "Scanning", foundCount: 1, foundBytes: 10), tick: 0, width: 60, height: 14
+        ).plainLines()
+        XCTAssertTrue(one[3].contains("Found 1 item · "), one[3])
+    }
+
+    func testScanningScreenLongFolderIsMiddleTruncated() {
+        let folder = "/Users/example/" + String(repeating: "a", count: 80) + "/src"
+        let lines = CleanupFlow.scanningScreen(
+            status: ScanStatus(headline: "Scanning", folder: folder), tick: 0, width: 40, height: 12
+        ).plainLines()
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines[2].contains("…"))
+        XCTAssertTrue(lines[2].contains("/src"))
+    }
+
+    func testScanningScreenLongHeadlineKeepsTheLastFolderName() {
+        let headline = "Scanning /Users/example/" + String(repeating: "a", count: 80) + "/ProjectX"
+        let lines = CleanupFlow.scanningScreen(status: ScanStatus(headline: headline), tick: 0, width: 40, height: 12).plainLines()
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines[1].contains("…"))
+        XCTAssertTrue(lines[1].contains("ProjectX"), lines[1])
+    }
+
+    func testInitialStatusUsesTheScanningLabelAsIs() {
+        XCTAssertEqual(labels.initialStatus.headline, "Scanning Developer caches")
+        XCTAssertEqual(labels.initialStatus.foundCount, 0)
+    }
+
+    func testEscapeAndQCancelTheScanAndNothingElseDoes() {
+        XCTAssertTrue(CleanupFlow.cancelsScan(.escape))
+        XCTAssertTrue(CleanupFlow.cancelsScan(.character("q")))
+        XCTAssertTrue(CleanupFlow.cancelsScan(.character("Q")))
+        XCTAssertFalse(CleanupFlow.cancelsScan(.enter))
+        XCTAssertFalse(CleanupFlow.cancelsScan(.character("n")))
+        XCTAssertFalse(CleanupFlow.cancelsScan(.up))
     }
 
     func testEmptyScreenShowsInfoDialogOverFadedScanningScreen() {
@@ -24,7 +82,7 @@ final class CleanupFlowTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("Nothing to clean") })
         XCTAssertTrue(lines.contains { $0.contains("No cleanup candidates found in readable locations.") })
         XCTAssertTrue(lines.contains { $0.contains("› OK ‹") })
-        XCTAssertTrue(lines.contains { $0.contains("Scanning Developer caches …") })
+        XCTAssertTrue(lines.contains { $0.contains("⠋ Scanning Developer caches") && !$0.contains("…") })
         XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
         XCTAssertTrue(buffer.lines(colors: true).joined().contains("\u{1B}[7m› OK ‹"))
     }

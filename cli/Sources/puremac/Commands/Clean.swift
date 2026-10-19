@@ -53,13 +53,8 @@ struct Clean: ParsableCommand {
 
         let ids = category.map { [$0] } ?? Clean.validIDs
         let ignore = try IgnoreStore(fileURL: AppPaths.ignoreFile)
-        let scanning = "Scanning " + ids.map(Clean.title).joined(separator: ", ") + " …"
+        let scanning = "Scanning " + ids.map(Clean.title).joined(separator: ", ")
         let progress = ScanProgress.forMode(mode)
-        let scan = {
-            ids.map { id in
-                CategoryScanner.scan(categoryID: id, title: Clean.title(id), ignore: ignore, progress: progress)
-            }.filter { !$0.groups.isEmpty }
-        }
         if mode == .fullscreen {
             let labels = CleanupFlow.Labels(
                 scanning: scanning,
@@ -67,14 +62,16 @@ struct Clean: ParsableCommand {
                 reviewTitle: "Choose items to clean",
                 noun: "item"
             )
-            let result = try CleanupFlow.run(labels: labels, ignore: ignore, scan: scan)
+            let result = try CleanupFlow.run(labels: labels, ignore: ignore) { status, cancel in
+                Clean.scan(ids: ids, ignore: ignore, progress: progress, status: status, cancel: cancel)
+            }
             try CleanupFlow.finish(result, labels: labels)
             return
         }
         if !json {
-            Term.err(Term.dim(scanning))
+            Term.err(Term.dim(scanning + " …"))
         }
-        let cats = scan()
+        let cats = Clean.scan(ids: ids, ignore: ignore, progress: progress)
 
         if json {
             print(try JSONReport.string(cats))
@@ -132,6 +129,28 @@ struct Clean: ParsableCommand {
     }
 
     static let emptyMessage = "No cleanup candidates found in readable locations."
+
+    typealias CategoryScanFunction = (String, String, IgnoreStore, ScanProgress, () -> Bool) -> CategoryScan
+
+    static func scan(
+        ids: [String],
+        ignore: IgnoreStore,
+        progress: ScanProgress,
+        status: WorkProgress<ScanStatus>? = nil,
+        cancel: CancelFlag? = nil,
+        scanCategory: CategoryScanFunction = CategoryScanner.scan
+    ) -> [CategoryScan] {
+        var scans: [CategoryScan] = []
+        for (index, id) in ids.enumerated() {
+            if cancel?.isCancelled == true { break }
+            let title = Clean.title(id)
+            status?.update { $0.beginCategory(title: title, position: index + 1, count: ids.count) }
+            let scan = scanCategory(id, title, ignore, progress) { cancel?.isCancelled == true }
+            status?.update { $0.addFound(in: scan) }
+            scans.append(scan)
+        }
+        return scans.filter { !$0.groups.isEmpty }
+    }
 
     static func title(_ id: String) -> String {
         Catalog.categoryTitles.first { $0.id == id }?.title ?? id.capitalized

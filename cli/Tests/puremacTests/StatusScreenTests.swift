@@ -5,11 +5,13 @@ import TerminalUI
 final class StatusScreenTests: XCTestCase {
     private let hint = KeyHint("Ctrl+C", "cancel")
 
-    func testRendersWindowMessageDetailDividerAndHint() {
+    func testRendersWindowRowsDividerAndHint() {
         let buffer = StatusScreen.render(
             title: "PureMac",
-            message: "Working...",
-            detail: "/Users/example/" + String(repeating: "a", count: 60),
+            rows: [
+                StatusRow("Working...", style: TextStyle(dim: true)),
+                StatusRow("/Users/example/" + String(repeating: "a", count: 60), truncatesInMiddle: true)
+            ],
             hint: hint,
             width: 40,
             height: 12
@@ -28,29 +30,29 @@ final class StatusScreenTests: XCTestCase {
     func testLongMessageEndsWithEllipsis() {
         let message = "Scanning ~/Projects, ~/Code, ~/dev, ~/GitHub, ~/Workspace …"
         let lines = StatusScreen.render(
-            title: "PureMac", message: message, detail: nil, hint: hint, width: 40, height: 12
+            title: "PureMac", rows: [StatusRow(message, style: TextStyle(dim: true)), StatusRow("")], hint: hint, width: 40, height: 12
         ).plainLines()
         XCTAssertTrue(lines[1].contains("… │"), lines[1])
         XCTAssertFalse(lines[1].contains("Workspace"))
     }
 
-    func testDetailRowIsEmptyWithoutDetail() {
+    func testRowsAfterTheLastOneStayBlank() {
         let lines = StatusScreen.render(
-            title: "PureMac", message: "Working...", detail: nil, hint: hint, width: 40, height: 12
+            title: "PureMac", rows: [StatusRow("Working...", style: TextStyle(dim: true))], hint: hint, width: 40, height: 12
         ).plainLines()
         XCTAssertEqual(lines[2], "│" + String(repeating: " ", count: 38) + "│")
     }
 
     func testBelowMinimumUsesTooSmallScreenWithHintAsExit() {
         XCTAssertEqual(
-            StatusScreen.render(title: "PureMac", message: "x", detail: nil, hint: hint, width: 39, height: 11),
+            StatusScreen.render(title: "PureMac", rows: [StatusRow("x", style: TextStyle(dim: true)), StatusRow("")], hint: hint, width: 39, height: 11),
             TooSmallScreen.render(title: "PureMac", exitHint: "Ctrl+C cancel", width: 39, height: 11)
         )
     }
 
     func testOverlayFadesBackgroundAndCentersDialog() {
         let background = StatusScreen.render(
-            title: "PureMac", message: "Working...", detail: nil, hint: hint, width: 60, height: 14
+            title: "PureMac", rows: [StatusRow("Working...", style: TextStyle(dim: true)), StatusRow("")], hint: hint, width: 60, height: 14
         )
         let dialog = Dialog(title: "Done", message: [Span("All good.")])
         let result = StatusScreen.overlay(dialog, on: background)
@@ -63,5 +65,29 @@ final class StatusScreenTests: XCTestCase {
         let background = TooSmallScreen.render(title: "PureMac", exitHint: "Ctrl+C cancel", width: 30, height: 8)
         let result = StatusScreen.overlay(Dialog(title: "Done", message: [Span("All good.")]), on: background)
         XCTAssertEqual(result, background)
+    }
+
+    func testRowsRenderWithTheirOwnStyleAndTruncation() {
+        let long = "/Users/example/" + String(repeating: "a", count: 60) + "/end"
+        let buffer = StatusScreen.render(
+            title: "PureMac",
+            rows: [
+                StatusRow("First", style: TextStyle(dim: true)),
+                StatusRow(long, truncatesInMiddle: true),
+                StatusRow("Third")
+            ],
+            hint: hint,
+            width: 40,
+            height: 12
+        )
+        let lines = buffer.plainLines()
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines[1].contains("First"))
+        XCTAssertTrue(buffer[2, 1].style.dim)
+        XCTAssertTrue(lines[2].contains("…") && lines[2].contains("/end"))
+        XCTAssertFalse(buffer[2, 2].style.dim)
+        XCTAssertTrue(lines[3].contains("Third"))
+        XCTAssertTrue(lines.contains { $0.hasPrefix("├") })
+        XCTAssertTrue(lines.contains { $0.contains("Ctrl+C cancel") })
     }
 }

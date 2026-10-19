@@ -20,16 +20,18 @@ enum CategoryScanner {
         categoryID id: String,
         title: String,
         ignore: IgnoreStore,
-        progress: ScanProgress = .stderr
+        progress: ScanProgress = .stderr,
+        isCancelled: () -> Bool = { false }
     ) -> CategoryScan {
         progress.write("  scanning \(title)…\r")
-        let groups = id == "trash" ? scanTrash(ignore: ignore) : scanCatalog(id: id, ignore: ignore)
+        let groups = id == "trash"
+            ? scanTrash(roots: trashRoots(), ignore: ignore, isCancelled: isCancelled)
+            : scanCatalog(targets: Catalog.targets(for: id), ignore: ignore, isCancelled: isCancelled)
         progress.write("                                        \r")
         return CategoryScan(id: id, title: title, groups: groups)
     }
 
-    private static func scanCatalog(id: String, ignore: IgnoreStore) -> [ToolGroup] {
-        let targets = Catalog.targets(for: id)
+    static func scanCatalog(targets: [Target], ignore: IgnoreStore, isCancelled: () -> Bool) -> [ToolGroup] {
         var candidates: [(target: Int, path: String)] = []
         for (ti, target) in targets.enumerated() {
             let paths = target.contents
@@ -44,6 +46,7 @@ enum CategoryScanner {
             }
         }
         candidates = uniqueCandidates(candidates)
+        if isCancelled() { return [] }
         let measurements = concurrentMeasurements(candidates.map { $0.path })
 
         var itemsByTarget = [Int: [ScanItem]](minimumCapacity: targets.count)
@@ -116,16 +119,20 @@ enum CategoryScanner {
         return accepted.map { ($0.target, $0.path) }
     }
 
-    private static func scanTrash(ignore: IgnoreStore) -> [ToolGroup] {
-        let fm = FileManager.default
+    private static func trashRoots() -> [String] {
         var roots = ["\(Safety.home)/.Trash"]
         let uid = getuid()
-        if let vols = try? fm.contentsOfDirectory(atPath: "/Volumes") {
+        if let vols = try? FileManager.default.contentsOfDirectory(atPath: "/Volumes") {
             for vol in vols { roots.append("/Volumes/\(vol)/.Trashes/\(uid)") }
         }
+        return roots
+    }
 
+    static func scanTrash(roots: [String], ignore: IgnoreStore, isCancelled: () -> Bool) -> [ToolGroup] {
+        let fm = FileManager.default
         var groups: [ToolGroup] = []
         for root in roots where !Safety.hasSymlinkComponent(root) && !Safety.isCloudOrDataless(root) {
+            if isCancelled() { break }
             guard let children = try? fm.contentsOfDirectory(atPath: root), !children.isEmpty else { continue }
             let paths = children.map { "\(root)/\($0)" }.filter { passesPreFilter($0, ignore: ignore) }
             let unique = uniqueCandidates(paths.map { (target: 0, path: $0) })

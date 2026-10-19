@@ -32,6 +32,7 @@ struct PureMac: ParsableCommand {
 enum HomeMenu {
     static let title = "PureMac"
     static let subtitle = "Your Mac, with room to work.  /  \(puremacVersion)"
+    static let projectCleanupIndex = 1
     static let exploreIndex = 2
     static let statusIndex = 3
     static let preferencesIndex = 4
@@ -44,6 +45,30 @@ enum HomeMenu {
         ("Preferences", "Change cleanup age, project folders, and protection"),
         ("Protected paths", "Choose paths excluded from cleanup")
     ]
+
+    static func screen(selection: Int, width: Int, height: Int) -> Buffer {
+        TerminalMenu.render(
+            title: title, subtitle: subtitle, options: options, selection: selection, width: width, height: height
+        )
+    }
+
+    static func projectCleanupConfirmation(folderCount: Int) -> StartConfirmation? {
+        folderCount > 0 ? .projectCleanup(folderCount: folderCount) : nil
+    }
+
+    static func noFoldersNotice(width: Int, height: Int) -> Buffer {
+        CleanupFlow.infoScreen(
+            title: options[projectCleanupIndex].title,
+            message: Purge.noFoldersMessage,
+            on: screen(selection: projectCleanupIndex, width: width, height: height)
+        )
+    }
+
+    private static func showNoFoldersNotice() throws {
+        let session = try TerminalSession()
+        defer { session.close() }
+        CleanupFlow.showInfo(on: session) { noFoldersNotice(width: session.width, height: session.height) }
+    }
 
     static func run(setupError: Error?) throws {
         var focus = 0
@@ -64,9 +89,16 @@ enum HomeMenu {
                 ) else { continue }
                 let arguments = [[], ["dev"], ["junk"], ["ai"], ["trash"]]
                 try Clean.parse(arguments[category]).run()
-            case 1: try Purge.parse([]).run()
+            case projectCleanupIndex:
+                let folderCount = try ConfigStore(fileURL: AppPaths.configFile).projectRoots.count
+                guard let confirmation = projectCleanupConfirmation(folderCount: folderCount) else {
+                    try showNoFoldersNotice()
+                    continue
+                }
+                guard try confirmation.ask() else { continue }
+                try Purge.parse([]).run()
             case exploreIndex:
-                guard try ExploreConfirmation.ask() else { continue }
+                guard try StartConfirmation.explore.ask() else { continue }
                 try Analyze.parse([]).run()
             case statusIndex:
                 let session = try TerminalSession()
