@@ -36,7 +36,7 @@ puremac purge ~/Projects
 puremac analyze ~/Projects
 ```
 
-Cleanup opens a selection screen. Nothing is selected when the interactive review begins. Move through the list, choose individual paths, and check the running size total. Press Return to review the selection, then confirm permanent deletion separately.
+Cleanup opens a selection screen. Nothing is selected when the interactive review begins. Move through the list, choose individual paths, and check the running size total. Press Return to review the selection, then confirm permanent deletion in a separate dialog.
 
 | Key | Action |
 |---|---|
@@ -47,9 +47,9 @@ Cleanup opens a selection screen. Nothing is selected when the interactive revie
 | Return | Review the selection |
 | Esc / Q | Cancel |
 
-Use Left and Right to scroll a long focused path. The final confirmation prints every selected path in full. Selection is by path, including recent project artifacts that earlier versions only displayed.
+Use Left and Right to scroll a long focused path. The final review lists every selected item. Return opens the confirmation dialog with Cancel selected; choose Remove or press Y to delete, Esc to go back. Selection is by path, including recent project artifacts that earlier versions only displayed.
 
-Prefer an ordinary scrolling terminal? Use `--plain` for numbered selection and a text review:
+Prefer an ordinary scrolling terminal? Use `--plain` for numbered selection and a text review that prints every selected path in full:
 
 ```bash
 puremac purge ~/Projects --plain

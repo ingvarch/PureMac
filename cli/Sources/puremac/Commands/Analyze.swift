@@ -285,27 +285,21 @@ struct Analyze: ParsableCommand {
                     if let child = Self.focusedChild(levels[index]) { Self.revealInFinder(child.path) }
                 default: break
                 }
-            case .delete, .space, .unknown:
+            case .delete, .space, .tab, .unknown:
                 break
             }
         }
     }
 
     static func renderMeasuring(_ path: String, width: Int, height: Int) -> Buffer {
-        guard TooSmallScreen.fits(width: width, height: height) else {
-            return TooSmallScreen.render(title: windowTitle, exitHint: "Ctrl+C cancel", width: width, height: height)
-        }
-        var buffer = Buffer(width: width, height: height)
-        let content = window.render(in: buffer.area, buffer: &buffer)
-        let cancelHint = KeyHints([KeyHint("Ctrl+C", "cancel")])
-        let areas = content.splitRows([.length(2), .fill, .length(1), .length(cancelHint.rows(width: content.width).count)])
-        let (header, divider, footer) = (areas[0], areas[2], areas[3])
-
-        buffer.write("Measuring allocated space...", x: header.x, y: header.y, style: TextStyle(dim: true), maxWidth: header.width)
-        buffer.write(Term.truncate(path, to: header.width, middle: true), x: header.x, y: header.y + 1)
-        window.renderDivider(atRow: divider.y, in: buffer.area, buffer: &buffer)
-        cancelHint.render(in: footer, buffer: &buffer)
-        return buffer
+        StatusScreen.render(
+            title: windowTitle,
+            message: "Measuring allocated space...",
+            detail: path,
+            hint: StatusScreen.cancelHint,
+            width: width,
+            height: height
+        )
     }
 
     private static let windowTitle = "PureMac Space Explorer"
@@ -345,11 +339,11 @@ struct Analyze: ParsableCommand {
         let hintRows = browserHints.rows(width: content.width).count
         let errorRows = snapshot.errors.isEmpty ? 0 : 1
         let spareRows = content.height - headerRows - dividerRows - errorRows - hintRows - minimumListRows
-        var pathLines = wrap(focusedPath, width: pathWidth)
+        var pathLines = Term.wrap(focusedPath, width: pathWidth)
         let pathRows = min(pathLines.count, max(1, spareRows))
         var budget = pathRows * pathWidth
         while pathLines.count > pathRows && budget > 1 {
-            pathLines = wrap(Term.truncate(focusedPath, to: budget, middle: true), width: pathWidth)
+            pathLines = Term.wrap(Term.truncate(focusedPath, to: budget, middle: true), width: pathWidth)
             budget -= 1
         }
         let areas = content.splitRows(
@@ -483,27 +477,6 @@ struct Analyze: ParsableCommand {
         if snapshot.skippedCount > 0 { parts.append("\(snapshot.skippedCount) skipped") }
         if snapshot.inaccessibleCount > 0 { parts.append("\(snapshot.inaccessibleCount) inaccessible") }
         return Term.truncate(parts.joined(separator: "  ·  "), to: width)
-    }
-
-    static func wrap(_ string: String, width: Int) -> [String] {
-        let safe = Term.sanitize(string)
-        guard !safe.isEmpty else { return [""] }
-        var lines: [String] = []
-        var current = ""
-        var used = 0
-        for character in safe {
-            let value = String(character)
-            let characterWidth = max(0, Term.displayWidth(value))
-            if used + characterWidth > width && !current.isEmpty {
-                lines.append(current)
-                current = ""
-                used = 0
-            }
-            current.append(character)
-            used += characterWidth
-        }
-        if !current.isEmpty { lines.append(current) }
-        return lines.isEmpty ? [""] : lines
     }
 
     private static func revealInFinder(_ path: String) {

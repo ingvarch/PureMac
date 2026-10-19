@@ -60,13 +60,28 @@ struct Purge: ParsableCommand {
             ? Purger.defaultRoots
             : paths.map { Safety.absolutePath($0) }
 
-        if !json { Term.err(Term.dim("Scanning " + roots.map { Render.shorten($0) }.joined(separator: ", ") + " …")) }
+        let scanning = "Scanning " + roots.map { Render.shorten($0) }.joined(separator: ", ") + " …"
+        if mode == .fullscreen {
+            let labels = CleanupFlow.Labels(
+                scanning: scanning,
+                empty: Purge.emptyMessage,
+                reviewTitle: "Choose project artifacts",
+                noun: "artifact"
+            )
+            let result = try CleanupFlow.run(labels: labels, ignore: ignore) {
+                let cat = Purger.scan(roots: roots, olderThanDays: days, ignore: ignore)
+                return cat.groups.isEmpty ? [] : [cat]
+            }
+            try CleanupFlow.finish(result, labels: labels)
+            return
+        }
+        if !json { Term.err(Term.dim(scanning)) }
         let cat = Purger.scan(roots: roots, olderThanDays: days, ignore: ignore)
 
         if json { print(try JSONReport.string([cat])); return }
 
         if cat.groups.isEmpty {
-            print(Term.green("No project artifacts found in readable locations."))
+            print(Term.green(Purge.emptyMessage))
             return
         }
 
@@ -83,19 +98,13 @@ struct Purge: ParsableCommand {
         case .forced:
             reviewed = [cat]
             renderScan(cat, days: days)
-        case .fullscreen:
-            guard let selection = try InteractiveReview.select([cat], title: "Choose project artifacts") else {
-                print(Term.dim("Cancelled. Nothing removed."))
-                return
-            }
-            reviewed = selection
         case .plain:
             guard let selection = try PlainSelectionReview.select([cat], title: "Choose project artifacts") else {
                 print(Term.dim("Cancelled. Nothing removed."))
                 return
             }
             reviewed = selection
-        case .reportOnly, .unavailable:
+        case .fullscreen, .reportOnly, .unavailable:
             return
         }
 
@@ -114,6 +123,8 @@ struct Purge: ParsableCommand {
         Render.cleanupSummary(out, dryRun: false)
         if out.hadFailures { throw ExitCode.failure }
     }
+
+    static let emptyMessage = "No project artifacts found in readable locations."
 
     private func resolvedDays() throws -> Int {
         if olderThanDays >= 0 { return olderThanDays }

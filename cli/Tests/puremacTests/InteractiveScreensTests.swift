@@ -252,7 +252,7 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertEqual(lines.count, 12)
         XCTAssertTrue(lines.contains { $0.contains("Enter confirm") })
         XCTAssertTrue(lines.contains { $0.contains("q cancel") })
-        XCTAssertTrue(lines.contains { $0.contains("Command confirmation follows") })
+        XCTAssertFalse(lines.contains { $0.contains("Command confirmation follows") })
         XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
     }
 
@@ -269,8 +269,7 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("/tmp/first") })
         XCTAssertFalse(lines.contains { $0.contains("/tmp/second") })
         XCTAssertTrue(lines.contains { $0.contains("↑↓ scroll  ←→ path  Enter confirm  Esc edit  q cancel") })
-        let confirmation = lines.firstIndex { $0.contains("Command confirmation follows") }!
-        XCTAssertEqual(buffer[2, confirmation].style, TextStyle(color: .yellow))
+        XCTAssertFalse(lines.contains { $0.contains("Command confirmation follows") })
         XCTAssertFalse(lines.contains { $0.contains("Space toggle") })
     }
 
@@ -419,6 +418,258 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertEqual(Term.displayWidth(Render.sizeCol(1_024)), Render.sizeColumnWidth)
     }
 
+    func testConfirmationOpensOnlyFromFinalReviewWithCancelFocused() {
+        var selecting = InteractiveReviewModel(categories: fixtureCategories())
+        selecting.selectAllMatching()
+        XCTAssertFalse(selecting.beginConfirmation())
+        XCTAssertFalse(selecting.isConfirming)
+
+        var model = reviewingModel()
+        XCTAssertFalse(model.isConfirming)
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertTrue(model.isConfirming)
+        XCTAssertEqual(model.confirmation, .cancel)
+    }
+
+    func testConfirmationFocusMovesWithClamping() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        model.moveConfirmationFocus(-1)
+        XCTAssertEqual(model.confirmation, .cancel)
+        model.moveConfirmationFocus(1)
+        XCTAssertEqual(model.confirmation, .remove)
+        model.moveConfirmationFocus(1)
+        XCTAssertEqual(model.confirmation, .remove)
+        model.moveConfirmationFocus(-1)
+        XCTAssertEqual(model.confirmation, .cancel)
+    }
+
+    func testCancelConfirmationReturnsToFinalReviewAndReopensOnCancel() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        model.moveConfirmationFocus(1)
+        model.cancelConfirmation()
+        XCTAssertFalse(model.isConfirming)
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertEqual(model.confirmation, .cancel)
+    }
+
+    func testEnterRightAfterOpeningOnlyClosesTheDialog() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertEqual(model.handleConfirmationKey(.enter), .handled)
+        XCTAssertFalse(model.isConfirming)
+        XCTAssertTrue(model.isReviewing)
+    }
+
+    func testEnterOnRemoveConfirms() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertEqual(model.handleConfirmationKey(.right), .handled)
+        XCTAssertEqual(model.handleConfirmationKey(.enter), .remove)
+    }
+
+    func testTabAndArrowsMoveConfirmationFocus() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertEqual(model.handleConfirmationKey(.tab), .handled)
+        XCTAssertEqual(model.confirmation, .remove)
+        XCTAssertEqual(model.handleConfirmationKey(.left), .handled)
+        XCTAssertEqual(model.confirmation, .cancel)
+        XCTAssertEqual(model.handleConfirmationKey(.right), .handled)
+        XCTAssertEqual(model.confirmation, .remove)
+    }
+
+    func testYConfirmsInOpenDialog() {
+        for key in [TerminalKey.character("y"), .character("Y")] {
+            var model = reviewingModel()
+            XCTAssertTrue(model.beginConfirmation())
+            XCTAssertEqual(model.handleConfirmationKey(key), .remove)
+        }
+    }
+
+    func testNAndEscapeCloseTheDialogOnly() {
+        for key in [TerminalKey.character("n"), .character("N"), .escape] {
+            var model = reviewingModel()
+            XCTAssertTrue(model.beginConfirmation())
+            XCTAssertEqual(model.handleConfirmationKey(key), .handled)
+            XCTAssertFalse(model.isConfirming)
+            XCTAssertTrue(model.isReviewing)
+        }
+    }
+
+    func testQCancelsTheWholeFlowFromTheDialog() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertEqual(model.handleConfirmationKey(.character("q")), .quit)
+    }
+
+    func testOtherKeysDoNothingWhileDialogIsOpen() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        let before = model.selectedAddresses.count
+        let keys: [TerminalKey] = [
+            .up, .down, .pageUp, .pageDown, .home, .end, .space, .backspace, .delete, .unknown,
+            .character("a"), .character("/"), .character("x")
+        ]
+        for key in keys {
+            XCTAssertEqual(model.handleConfirmationKey(key), .handled)
+            XCTAssertTrue(model.isConfirming)
+            XCTAssertEqual(model.confirmation, .cancel)
+        }
+        XCTAssertEqual(model.selectedAddresses.count, before)
+        XCTAssertTrue(model.isReviewing)
+    }
+
+    func testConfirmationKeysAreIgnoredWhenDialogIsClosed() {
+        var model = reviewingModel()
+        XCTAssertEqual(model.handleConfirmationKey(.character("y")), .passthrough)
+        XCTAssertEqual(model.handleConfirmationKey(.enter), .passthrough)
+        XCTAssertEqual(model.handleConfirmationKey(.character("q")), .passthrough)
+    }
+
+    func testTabCyclesBetweenButtons() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        XCTAssertEqual(model.handleConfirmationKey(.tab), .handled)
+        XCTAssertEqual(model.confirmation, .remove)
+        XCTAssertEqual(model.handleConfirmationKey(.tab), .handled)
+        XCTAssertEqual(model.confirmation, .cancel)
+    }
+
+    func testConfirmationTitleUsesSingularForOneItem() {
+        for (count, noun, title) in [(1, "item", "Remove 1 item?"), (1, "artifact", "Remove 1 artifact?"),
+                                     (0, "item", "Remove 0 items?"), (2, "artifact", "Remove 2 artifacts?")] {
+            XCTAssertEqual(
+                InteractiveReview.confirmationDialog(count: count, total: 1_000, noun: noun, focus: .cancel).title,
+                title
+            )
+        }
+    }
+
+    func testConfirmationDialogIsDrawnOverFadedFinalReview() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        let buffer = renderReview(model, width: 80, height: 24)
+        let lines = buffer.plainLines()
+        XCTAssertTrue(lines.contains { $0.contains("Remove 2 items?") })
+        XCTAssertTrue(lines.contains { $0.contains("3 KB will be permanently deleted.") })
+        XCTAssertTrue(lines.contains { $0.contains("This cannot be undone.") })
+        XCTAssertTrue(lines.contains { $0.contains("› Cancel ‹  [ Remove ]") })
+        XCTAssertTrue(lines.contains { $0.contains("←→ choose  Enter select  Y remove  Esc back") })
+        XCTAssertTrue(lines.contains { $0.contains("/tmp/first") })
+        XCTAssertTrue(lines.contains { $0.contains("/tmp/second") })
+        XCTAssertFalse(lines.contains { $0.contains("/tmp/third") })
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 80 })
+        XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
+        XCTAssertEqual(buffer[3, 0].style, TextStyle(dim: true))
+    }
+
+    func testConfirmationDialogUsesYellowTitleAndBorder() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        let buffer = renderReview(model, width: 80, height: 24)
+        let frame = InteractiveReview.confirmationDialog(count: 2, total: 3_000, noun: "item", focus: .cancel)
+            .frame(in: buffer.area)
+        XCTAssertEqual(buffer[frame.x, frame.y].style, TextStyle(color: .yellow))
+        XCTAssertEqual(buffer[frame.x + 3, frame.y].style, TextStyle(color: .yellow, bold: true))
+    }
+
+    func testConfirmationDialogFocusStyles() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        let cancelFocused = renderReview(model, width: 80, height: 24).lines(colors: true).joined()
+        XCTAssertTrue(cancelFocused.contains("\u{1B}[7m› Cancel ‹"))
+        XCTAssertTrue(cancelFocused.contains("\u{1B}[31m[ Remove ]"))
+
+        model.moveConfirmationFocus(1)
+        let removeFocused = renderReview(model, width: 80, height: 24).lines(colors: true).joined()
+        XCTAssertTrue(removeFocused.contains("\u{1B}[7;31m› Remove ‹"))
+        XCTAssertFalse(removeFocused.contains("\u{1B}[7m› Cancel ‹"))
+    }
+
+    func testConfirmationDialogUsesTheGivenNoun() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        let lines = InteractiveReview.render(
+            model: model, title: "Choose project artifacts", noun: "artifact", width: 80, height: 24
+        ).plainLines()
+        XCTAssertTrue(lines.contains { $0.contains("Remove 2 artifacts?") })
+    }
+
+    func testConfirmationDialogFitsMinimumSize() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        let lines = renderReview(model, width: 40, height: 12).plainLines()
+        XCTAssertEqual(lines.count, 12)
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines.contains { $0.contains("› Cancel ‹  [ Remove ]") })
+        XCTAssertTrue(lines.contains { $0.contains("Y remove") })
+    }
+
+    func testFinalReviewWithoutDialogIsNotFaded() {
+        let buffer = renderReview(reviewingModel(), width: 80, height: 24)
+        XCTAssertEqual(buffer[0, 0].style, TextStyle(color: .yellow))
+        XCTAssertFalse(buffer.plainLines().contains { $0.contains("Cancel") })
+    }
+
+    func testHomeMenuWaitsForReturnOnlyAfterEntriesOutsideCleanup() {
+        XCTAssertFalse(HomeMenu.waitsForReturn(afterChoice: 0))
+        XCTAssertFalse(HomeMenu.waitsForReturn(afterChoice: 1))
+        for choice in 2...5 {
+            XCTAssertTrue(HomeMenu.waitsForReturn(afterChoice: choice))
+        }
+    }
+
+    func testEnterInFinalReviewOpensDialogAndNeverReturnsTheSelection() {
+        var model = reviewingModel()
+        XCTAssertEqual(model.routeKey(.enter), .handled)
+        XCTAssertTrue(model.isConfirming)
+        XCTAssertEqual(model.confirmation, .cancel)
+        XCTAssertEqual(model.routeKey(.enter), .handled)
+        XCTAssertFalse(model.isConfirming)
+    }
+
+    func testRouteKeyReturnsRemoveOnlyFromTheOpenDialog() {
+        var model = reviewingModel()
+        XCTAssertEqual(model.routeKey(.character("y")), .passthrough)
+        _ = model.routeKey(.enter)
+        XCTAssertEqual(model.routeKey(.character("y")), .remove)
+        XCTAssertEqual(model.routeKey(.character("q")), .quit)
+        XCTAssertEqual(model.routeKey(.space), .handled)
+    }
+
+    func testRouteKeyPassesEnterThroughOutsideTheFinalReview() {
+        var model = InteractiveReviewModel(categories: fixtureCategories())
+        XCTAssertEqual(model.routeKey(.enter), .passthrough)
+        XCTAssertFalse(model.isConfirming)
+    }
+
+    func testTooSmallScreenLetsOnlyCloseAndCancelKeysReachTheDialog() {
+        var model = reviewingModel()
+        XCTAssertTrue(model.beginConfirmation())
+        for key in [TerminalKey.escape, .character("n"), .character("N"), .character("q"), .enter] {
+            XCTAssertTrue(model.acceptsKey(key, tooSmall: true), "\(key)")
+        }
+        for key in [TerminalKey.character("y"), .character("Y"), .tab, .right, .space, .left] {
+            XCTAssertFalse(model.acceptsKey(key, tooSmall: true), "\(key)")
+        }
+        _ = model.handleConfirmationKey(.right)
+        XCTAssertFalse(model.acceptsKey(.enter, tooSmall: true))
+        XCTAssertTrue(model.acceptsKey(.character("y"), tooSmall: false))
+    }
+
+    func testTooSmallRuleDoesNotAffectOtherStates() {
+        let model = reviewingModel()
+        XCTAssertTrue(model.acceptsKey(.enter, tooSmall: true))
+        XCTAssertTrue(model.acceptsKey(.down, tooSmall: true))
+    }
+
+    private func reviewingModel() -> InteractiveReviewModel {
+        .reviewing(fixtureCategories(), selecting: [0, 1])
+    }
+
     private func menuOptions(_ count: Int) -> [(title: String, detail: String)] {
         (1...count).map { (title: "Tool \($0)", detail: "Description \($0)") }
     }
@@ -440,7 +691,7 @@ final class InteractiveScreensTests: XCTestCase {
     }
 
     private func renderReview(_ model: InteractiveReviewModel, width: Int, height: Int) -> Buffer {
-        InteractiveReview.render(model: model, title: "Review removable files", width: width, height: height)
+        InteractiveReview.render(model: model, title: "Review removable files", noun: "item", width: width, height: height)
     }
 
     private func manyItemsCategories(_ count: Int) -> [CategoryScan] {

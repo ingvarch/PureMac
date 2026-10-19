@@ -13,6 +13,7 @@ public enum TerminalKey: Equatable {
     case enter
     case escape
     case space
+    case tab
     case backspace
     case delete
     case character(Character)
@@ -152,19 +153,18 @@ public final class TerminalSession {
     public func readKey() -> TerminalKey {
         guard !isClosed, let first = readByte() else { return .escape }
 
-        switch first {
-        case 0x0A, 0x0D:
-            return .enter
-        case 0x20:
-            return .space
-        case 0x08, 0x7F:
-            return .backspace
-        case 0x1B:
-            return readEscapeSequence()
-        case 0x01...0x1A:
-            return .unknown
-        default:
-            return decodeCharacter(firstByte: first)
+        if let key = Self.key(forSimpleByte: first) { return key }
+        return first == 0x1B ? readEscapeSequence() : decodeCharacter(firstByte: first)
+    }
+
+    static func key(forSimpleByte byte: UInt8) -> TerminalKey? {
+        switch byte {
+        case 0x0A, 0x0D: return .enter
+        case 0x20: return .space
+        case 0x09: return .tab
+        case 0x08, 0x7F: return .backspace
+        case 0x01...0x1A: return .unknown
+        default: return nil
         }
     }
 

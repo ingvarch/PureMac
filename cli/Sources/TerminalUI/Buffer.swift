@@ -89,6 +89,23 @@ public struct Buffer: Equatable {
         return column - x
     }
 
+    public mutating func clear(_ rect: Rect) {
+        let left = max(0, rect.x)
+        let right = min(width, rect.x + rect.width)
+        let top = max(0, rect.y)
+        let bottom = min(height, rect.y + rect.height)
+        guard right > left, bottom > top else { return }
+        let blanks = String(repeating: " ", count: right - left)
+        for row in top..<bottom {
+            write(blanks, x: left, y: row)
+        }
+    }
+
+    public mutating func fade() {
+        let dim = TextStyle(dim: true)
+        cells = cells.map { Cell(symbol: $0.symbol, style: dim) }
+    }
+
     public func lines(colors: Bool = Term.colorEnabled) -> [String] {
         (0..<height).map { row in
             var line = ""

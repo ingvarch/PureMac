@@ -321,15 +321,6 @@ final class AnalyzeTests: XCTestCase {
         }
     }
 
-    func testFocusedPathWrappingPreservesEveryCharacter() {
-        let path = "/Users/example/a folder/with/a/very-long-name/file.bin"
-        let lines = Analyze.wrap(path, width: 11)
-
-        XCTAssertGreaterThan(lines.count, 1)
-        XCTAssertEqual(lines.joined(), path)
-        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) <= 11 })
-    }
-
     func testNarrowBrowserRenderStaysWithinViewport() {
         let path = "/Users/example/a folder/with/a/very-long-name/file.bin"
         let snapshot = snapshot(path: "/Users/example/a folder", children: [child(path, size: 8_192, isDir: false)])

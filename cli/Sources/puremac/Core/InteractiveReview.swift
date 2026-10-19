@@ -13,6 +13,14 @@ enum ReviewDisplayRow {
     case item(ReviewAddress)
 }
 
+enum ConfirmationButton: Int {
+    case cancel, remove
+}
+
+enum ReviewKeyRoute: Equatable {
+    case handled, remove, quit, passthrough
+}
+
 struct InteractiveReviewModel {
     var categories: [CategoryScan]
     var query = ""
@@ -22,6 +30,9 @@ struct InteractiveReviewModel {
     var pathOffset = 0
     private(set) var focus = 0
     private(set) var reviewFocus = 0
+    private(set) var confirmation: ConfirmationButton?
+
+    var isConfirming: Bool { confirmation != nil }
 
     init(categories: [CategoryScan]) {
         self.categories = categories.map { category in
@@ -155,6 +166,73 @@ struct InteractiveReviewModel {
         return true
     }
 
+    mutating func beginConfirmation() -> Bool {
+        guard isReviewing else { return false }
+        confirmation = .cancel
+        return true
+    }
+
+    mutating func cancelConfirmation() {
+        confirmation = nil
+    }
+
+    mutating func moveConfirmationFocus(_ delta: Int) {
+        guard let current = confirmation else { return }
+        let moved = min(ConfirmationButton.remove.rawValue, max(ConfirmationButton.cancel.rawValue, current.rawValue + delta))
+        confirmation = ConfirmationButton(rawValue: moved)
+    }
+
+    mutating func cycleConfirmationFocus() {
+        guard let current = confirmation else { return }
+        confirmation = current == .cancel ? .remove : .cancel
+    }
+
+    mutating func handleConfirmationKey(_ key: TerminalKey) -> ReviewKeyRoute {
+        guard let focused = confirmation else { return .passthrough }
+        switch key {
+        case .left:
+            moveConfirmationFocus(-1)
+        case .right:
+            moveConfirmationFocus(1)
+        case .tab:
+            cycleConfirmationFocus()
+        case .enter:
+            if focused == .remove { return .remove }
+            cancelConfirmation()
+        case .escape:
+            cancelConfirmation()
+        case .character(let character):
+            switch character.lowercasedString {
+            case "y": return .remove
+            case "n": cancelConfirmation()
+            case "q": return .quit
+            default: break
+            }
+        default:
+            break
+        }
+        return .handled
+    }
+
+    mutating func routeKey(_ key: TerminalKey) -> ReviewKeyRoute {
+        if isConfirming { return handleConfirmationKey(key) }
+        if isReviewing, key == .enter {
+            _ = beginConfirmation()
+            return .handled
+        }
+        return .passthrough
+    }
+
+    func acceptsKey(_ key: TerminalKey, tooSmall: Bool) -> Bool {
+        guard tooSmall, let focused = confirmation else { return true }
+        switch key {
+        case .escape: return true
+        case .enter: return focused == .cancel
+        case .character(let character): return ["n", "q"].contains(character.lowercasedString)
+        default: return false
+        }
+    }
+
     mutating func endReview() {
         isReviewing = false
         pathOffset = 0
@@ -209,14 +287,28 @@ struct InteractiveReviewModel {
 }
 
 enum InteractiveReview {
-    static func select(_ categories: [CategoryScan], title: String) throws -> [CategoryScan]? {
-        let session = try TerminalSession()
-        defer { session.close() }
-
+    static func select(
+        _ categories: [CategoryScan],
+        session: TerminalSession,
+        title: String,
+        noun: String
+    ) -> InteractiveReviewModel? {
         var model = InteractiveReviewModel(categories: categories)
         while true {
-            session.draw(render(model: model, title: title, width: session.width, height: session.height))
+            session.draw(render(model: model, title: title, noun: noun, width: session.width, height: session.height))
             let key = session.readKey()
+
+            guard model.acceptsKey(key, tooSmall: !TooSmallScreen.fits(width: session.width, height: session.height)) else {
+                continue
+            }
+            switch model.routeKey(key) {
+            case .remove:
+                model.cancelConfirmation()
+                return model
+            case .quit: return nil
+            case .handled: continue
+            case .passthrough: break
+            }
 
             if model.isSearching {
                 switch key {
@@ -261,9 +353,6 @@ enum InteractiveReview {
             case .space:
                 model.toggleFocused()
             case .enter:
-                if model.isReviewing {
-                    return model.selectedResult()
-                }
                 _ = model.beginReview()
             case .escape:
                 if model.isReviewing {
@@ -299,6 +388,7 @@ enum InteractiveReview {
     static func render(
         model: InteractiveReviewModel,
         title: String,
+        noun: String,
         width: Int,
         height: Int
     ) -> Buffer {
@@ -307,27 +397,24 @@ enum InteractiveReview {
         }
         var buffer = Buffer(width: width, height: height)
         let reviewing = model.isReviewing
-        let accent = TextStyle(color: .yellow)
+        let accent = StatusScreen.warningBorder
         let window = Window(
             title: reviewing ? "Final review" : title,
             info: "\(model.selectedCount) selected · \(ByteCount.human(model.selectedBytes))",
             borderStyle: reviewing ? accent : TextStyle(dim: true),
-            titleStyle: TextStyle(color: reviewing ? .yellow : .cyan, bold: true)
+            titleStyle: reviewing ? StatusScreen.warningTitle : TextStyle(color: .cyan, bold: true)
         )
         let content = window.render(in: buffer.area, buffer: &buffer)
         let hints = KeyHints(reviewing ? reviewHints : selectHints)
         let areas = content.splitRows(
-            [.length(1), .fill, .length(1), .length(1), .length(hints.rows(width: content.width).count), .length(reviewing ? 1 : 0)]
+            [.length(1), .fill, .length(1), .length(1), .length(hints.rows(width: content.width).count)]
         )
-        let (header, list, divider, path, footer, confirmation) = (areas[0], areas[1], areas[2], areas[3], areas[4], areas[5])
+        let (header, list, divider, path, footer) = (areas[0], areas[1], areas[2], areas[3], areas[4])
 
         renderHeader(model: model, in: header, buffer: &buffer)
         window.renderDivider(atRow: divider.y, in: buffer.area, buffer: &buffer)
         buffer.write(focusedPathSpans(model: model, width: path.width), x: path.x, y: path.y, maxWidth: path.width)
         hints.render(in: footer, buffer: &buffer)
-        if reviewing {
-            buffer.write("Command confirmation follows", x: confirmation.x, y: confirmation.y, style: accent, maxWidth: confirmation.width)
-        }
 
         let rows = model.displayRows(reviewing: reviewing)
         let focusedAddress = model.focusedAddress
@@ -342,8 +429,32 @@ enum InteractiveReview {
         }
         Scrollbar(total: rows.count, visible: list.height, offset: start)
             .render(column: width - 1, rows: list.y..<(list.y + list.height), buffer: &buffer)
-        return buffer
+        guard let focus = model.confirmation else { return buffer }
+        let dialog = confirmationDialog(count: model.selectedCount, total: model.selectedBytes, noun: noun, focus: focus)
+        return StatusScreen.overlay(dialog, on: buffer)
     }
+
+    static func confirmationDialog(count: Int, total: Int64, noun: String, focus: ConfirmationButton) -> Dialog {
+        Dialog(
+            title: "Remove \(CleanupFlow.counted(count, noun))?",
+            titleStyle: StatusScreen.warningTitle,
+            borderStyle: StatusScreen.warningBorder,
+            message: [
+                Span("\(ByteCount.human(total)) will be permanently deleted."),
+                Span("This cannot be undone.")
+            ],
+            buttons: [DialogButton("Cancel"), DialogButton("Remove", role: .destructive)],
+            focusedButton: focus.rawValue,
+            hints: KeyHints(confirmationHints)
+        )
+    }
+
+    private static let confirmationHints = [
+        KeyHint("←→", "choose"),
+        KeyHint("Enter", "select"),
+        KeyHint("Y", "remove"),
+        KeyHint("Esc", "back")
+    ]
 
     private static let selectHints = [
         KeyHint("↑↓", "move"),

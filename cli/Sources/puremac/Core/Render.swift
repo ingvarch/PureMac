@@ -81,28 +81,48 @@ enum Render {
             print(Term.bold("Dry run complete"))
             print(
                 Term.cyan(ByteCount.human(outcome.freedBytes))
-                    + Term.dim(" reclaimable across \(outcome.removed) item\(outcome.removed == 1 ? "" : "s")")
+                    + Term.dim(" reclaimable across \(itemCount(outcome.removed))")
             )
             print(Term.dim("Nothing was deleted."))
         } else {
-            print(Term.green(Term.bold("Cleanup complete")))
+            print(Term.green(Term.bold(cleanupCompleteTitle)))
             print(
                 Term.bold(ByteCount.human(outcome.freedBytes))
-                    + Term.dim(" removed across \(outcome.removed) item\(outcome.removed == 1 ? "" : "s")")
+                    + Term.dim(removedDetail(outcome))
             )
         }
 
         if !outcome.skipped.isEmpty {
-            print(Term.yellow("\(outcome.skipped.count) skipped") + Term.dim("  protected or ignored"))
+            print(Term.yellow(skippedLabel(outcome)) + Term.dim(skippedNote))
         }
         if !outcome.failed.isEmpty {
-            print(Term.red("\(outcome.failed.count) failed"))
+            print(Term.red(failedLabel(outcome)))
             for failure in outcome.failed.prefix(10) {
                 Term.err("  ! \(Term.sanitize(failure.path))")
                 Term.err("    \(Term.sanitize(failure.error))")
             }
         }
         print("")
+    }
+
+    static let cleanupCompleteTitle = "Cleanup complete"
+
+    static func itemCount(_ count: Int) -> String {
+        CleanupFlow.counted(count, "item")
+    }
+
+    static func removedDetail(_ outcome: CleanOutcome) -> String {
+        " removed across \(itemCount(outcome.removed))"
+    }
+
+    static func skippedLabel(_ outcome: CleanOutcome) -> String {
+        "\(outcome.skipped.count) skipped"
+    }
+
+    static let skippedNote = "  protected or ignored"
+
+    static func failedLabel(_ outcome: CleanOutcome) -> String {
+        "\(outcome.failed.count) failed"
     }
 
     static func sizeCol(_ bytes: Int64) -> String {

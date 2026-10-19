@@ -1,12 +1,30 @@
 import Foundation
 
+enum ScanProgress: Equatable {
+    case stderr, silent
+
+    static func forMode(_ mode: CleanupCommandMode) -> ScanProgress {
+        mode == .fullscreen ? .silent : .stderr
+    }
+
+    func write(_ text: String) {
+        guard self == .stderr else { return }
+        FileHandle.standardError.write(Data(text.utf8))
+    }
+}
+
 enum CategoryScanner {
     static let minSize: Int64 = 1024
 
-    static func scan(categoryID id: String, title: String, ignore: IgnoreStore) -> CategoryScan {
-        FileHandle.standardError.write(Data("  scanning \(title)…\r".utf8))
+    static func scan(
+        categoryID id: String,
+        title: String,
+        ignore: IgnoreStore,
+        progress: ScanProgress = .stderr
+    ) -> CategoryScan {
+        progress.write("  scanning \(title)…\r")
         let groups = id == "trash" ? scanTrash(ignore: ignore) : scanCatalog(id: id, ignore: ignore)
-        FileHandle.standardError.write(Data("                                        \r".utf8))
+        progress.write("                                        \r")
         return CategoryScan(id: id, title: title, groups: groups)
     }
 

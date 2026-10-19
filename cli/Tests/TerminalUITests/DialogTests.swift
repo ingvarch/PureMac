@@ -1,0 +1,210 @@
+import XCTest
+@testable import TerminalUI
+
+final class DialogTests: XCTestCase {
+    private let area = Rect(x: 0, y: 0, width: 40, height: 12)
+
+    private func render(_ dialog: Dialog, in area: Rect, fill: String? = nil) -> (frame: Rect, buffer: Buffer, rows: [String]) {
+        var buffer = Buffer(width: area.width, height: area.height)
+        if let fill {
+            for row in 0..<area.height { buffer.write(String(repeating: fill, count: area.width), x: 0, y: row) }
+        }
+        dialog.render(in: area, buffer: &buffer)
+        let frame = dialog.frame(in: area)
+        let rows = buffer.plainLines().dropFirst(frame.y).prefix(frame.height).map {
+            String($0.dropFirst(frame.x).prefix(frame.width))
+        }
+        return (frame, buffer, rows)
+    }
+
+    private func simple(message: String = "Hello", buttons: [DialogButton] = [DialogButton("OK")]) -> Dialog {
+        Dialog(title: "Hi", message: [Span(message)], buttons: buttons)
+    }
+
+    func testMaxContentWidthLeavesTheMarginAroundTheFrame() {
+        XCTAssertEqual(Dialog.maxContentWidth(in: Rect(x: 0, y: 0, width: 80, height: 24)), 72)
+        XCTAssertEqual(Dialog.maxContentWidth(in: Rect(x: 0, y: 0, width: 4, height: 24)), 1)
+    }
+
+    func testFrameIsCenteredAndSizedToContent() {
+        let dialog = simple()
+        XCTAssertEqual(dialog.frame(in: area), Rect(x: 15, y: 3, width: 10, height: 5))
+        XCTAssertEqual(render(dialog, in: area).rows, [
+            "╭─ Hi ───╮",
+            "│ Hello  │",
+            "│        │",
+            "│ [ OK ] │",
+            "╰────────╯"
+        ])
+    }
+
+    func testFrameIsCenteredInOffsetArea() {
+        let frame = simple().frame(in: Rect(x: 10, y: 2, width: 40, height: 12))
+        XCTAssertEqual(frame, Rect(x: 25, y: 5, width: 10, height: 5))
+    }
+
+    func testContentWidthIsWidestOfMessageButtonsAndHints() {
+        let wideButtons = simple(buttons: [DialogButton("Cancel"), DialogButton("Remove")])
+        XCTAssertEqual(wideButtons.frame(in: area).width, 22 + 4)
+        var withHints = simple()
+        withHints.hints = KeyHints([KeyHint("Esc", "back"), KeyHint("Enter", "select")])
+        XCTAssertEqual(withHints.frame(in: area).width, Term.displayWidth("Esc back  Enter select") + 4)
+    }
+
+    func testWidthIsCappedToMarginsAndMessageWraps() {
+        let dialog = simple(message: String(repeating: "word ", count: 30))
+        let result = render(dialog, in: area)
+        XCTAssertEqual(result.frame.width, 36)
+        XCTAssertEqual(result.frame.x, 2)
+        XCTAssertTrue(result.rows[1].hasPrefix("│ word word"))
+        XCTAssertTrue(result.rows.allSatisfy { Term.displayWidth($0) == 36 })
+    }
+
+    func testMessageWrapsOnSpacesAndEachParagraphOnItsOwn() {
+        let dialog = Dialog(
+            title: "T",
+            message: [Span("aaa bbb ccc ddd"), Span("ee")],
+            buttons: []
+        )
+        let result = render(dialog, in: Rect(x: 0, y: 0, width: 16, height: 12))
+        XCTAssertEqual(result.frame.width, 12)
+        XCTAssertEqual(Array(result.rows[1...3]), ["│ aaa bbb  │", "│ ccc ddd  │", "│ ee       │"])
+    }
+
+    func testLongWordIsHardBrokenByDisplayWidth() {
+        let dialog = Dialog(title: "T", message: [Span("abcdefghij 界界界")], buttons: [])
+        let result = render(dialog, in: Rect(x: 0, y: 0, width: 13, height: 12))
+        let rows = result.buffer.plainLines().dropFirst(result.frame.y + 1).prefix(4).map { String($0.dropFirst(2).dropLast(2)) }
+        XCTAssertEqual(rows, ["│ abcde │", "│ fghij │", "│ 界界  │", "│ 界    │"])
+    }
+
+    func testDropsBlankRowFirstWhenHeightIsShort() {
+        let message = (1...7).map { Span("line \($0)") }
+        let dialog = Dialog(title: "T", message: message, buttons: [DialogButton("OK")])
+        let result = render(dialog, in: area)
+        XCTAssertEqual(result.frame.height, 10)
+        XCTAssertEqual(result.rows.count, 10)
+        XCTAssertTrue(result.rows[7].contains("line 7"))
+        XCTAssertTrue(result.rows[8].contains("[ OK ]"))
+    }
+
+    func testDropsTrailingMessageRowsAfterBlankRow() {
+        let message = (1...10).map { Span("line \($0)") }
+        var dialog = Dialog(title: "T", message: message, buttons: [DialogButton("OK")])
+        dialog.hints = KeyHints([KeyHint("Esc", "back")])
+        let result = render(dialog, in: area)
+        XCTAssertEqual(result.frame, Rect(x: result.frame.x, y: 1, width: result.frame.width, height: 10))
+        XCTAssertTrue(result.rows[6].contains("line 6"))
+        XCTAssertFalse(result.rows.joined().contains("line 7"))
+        XCTAssertTrue(result.rows[7].contains("[ OK ]"))
+        XCTAssertTrue(result.rows[8].contains("Esc back"))
+    }
+
+    private func buttonStyles(focused: Int?, buttons: [DialogButton]) -> (start: Int, row: Int, buffer: Buffer) {
+        var dialog = simple(buttons: buttons)
+        dialog.focusedButton = focused
+        let result = render(dialog, in: area)
+        let rowIndex = result.frame.y + 3
+        let line = result.buffer.plainLines()[rowIndex]
+        let start = line.distance(from: line.startIndex, to: line.range(of: "Cancel")!.lowerBound) - 2
+        return (start, rowIndex, result.buffer)
+    }
+
+    private let both = [DialogButton("Cancel"), DialogButton("Remove", role: .destructive)]
+
+    func testButtonsAreRightAlignedTwoSpacesApart() {
+        let result = render(simple(buttons: both), in: area)
+        XCTAssertEqual(result.rows[3], "│ [ Cancel ]  [ Remove ] │")
+    }
+
+    func testFocusedButtonIsWrittenWithPointersAtTheSameWidth() {
+        var dialog = simple(buttons: both)
+        dialog.focusedButton = 0
+        XCTAssertEqual(render(dialog, in: area).rows[3], "│ › Cancel ‹  [ Remove ] │")
+        dialog.focusedButton = 1
+        XCTAssertEqual(render(dialog, in: area).rows[3], "│ [ Cancel ]  › Remove ‹ │")
+    }
+
+    func testFocusedNormalButtonIsInverse() {
+        let found = buttonStyles(focused: 0, buttons: both)
+        for column in found.start..<(found.start + 10) {
+            XCTAssertEqual(found.buffer[column, found.row].style, TextStyle(inverse: true))
+        }
+        XCTAssertEqual(found.buffer[found.start + 12, found.row].style, TextStyle(color: .red))
+        XCTAssertEqual(found.buffer[found.start + 10, found.row].style, .plain)
+    }
+
+    func testFocusedDestructiveButtonIsRedAndInverse() {
+        let found = buttonStyles(focused: 1, buttons: both)
+        XCTAssertEqual(found.buffer[found.start, found.row].style, .plain)
+        for column in (found.start + 12)..<(found.start + 22) {
+            XCTAssertEqual(found.buffer[column, found.row].style, TextStyle(color: .red, inverse: true))
+        }
+    }
+
+    func testNoFocusLeavesButtonsUnhighlighted() {
+        let found = buttonStyles(focused: nil, buttons: both)
+        XCTAssertEqual(found.buffer[found.start, found.row].style, .plain)
+        XCTAssertEqual(found.buffer[found.start + 12, found.row].style, TextStyle(color: .red))
+    }
+
+    func testHintsRowsFollowButtons() {
+        var dialog = simple()
+        dialog.hints = KeyHints([KeyHint("Esc", "back")])
+        let result = render(dialog, in: area)
+        XCTAssertEqual(result.rows[3], "│   [ OK ] │")
+        XCTAssertEqual(result.rows[4], "│ Esc back │")
+        XCTAssertEqual(result.rows[5], "╰──────────╯")
+    }
+
+    func testBorderAndTitleStylesApply() {
+        var dialog = simple()
+        dialog.borderStyle = TextStyle(color: .yellow)
+        dialog.titleStyle = TextStyle(color: .yellow, bold: true)
+        let result = render(dialog, in: area)
+        XCTAssertEqual(result.buffer[result.frame.x, result.frame.y].style, TextStyle(color: .yellow))
+        XCTAssertEqual(result.buffer[result.frame.x + 3, result.frame.y].style, TextStyle(color: .yellow, bold: true))
+        XCTAssertEqual(Dialog(title: "T").borderStyle, .plain)
+        XCTAssertEqual(Dialog(title: "T").titleStyle, TextStyle(bold: true))
+    }
+
+    func testRenderClearsBackgroundInsideFrameOnly() {
+        let result = render(simple(), in: area, fill: "x")
+        let lines = result.buffer.plainLines()
+        XCTAssertEqual(lines[2], String(repeating: "x", count: 40))
+        XCTAssertEqual(lines[4], String(repeating: "x", count: 15) + "│ Hello  │" + String(repeating: "x", count: 15))
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(result.buffer.lines(colors: true).allSatisfy { Term.displayWidth($0) == 40 })
+    }
+
+    func testBlankBackgroundStyleIsResetInsideFrame() {
+        var buffer = Buffer(width: 40, height: 12)
+        buffer.fade()
+        simple().render(in: buffer.area, buffer: &buffer)
+        XCTAssertEqual(buffer[16, 4].style, .plain)
+        XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
+    }
+
+    func testStatusDialogWithoutButtonsOrHintsHasNoBlankRow() {
+        let dialog = Dialog(title: "Working", message: [Span("Removing 2 items…")])
+        XCTAssertEqual(render(dialog, in: area).rows, [
+            "╭─ Working ─────────╮",
+            "│ Removing 2 items… │",
+            "╰───────────────────╯"
+        ])
+    }
+
+    func testContentWidthFitsTitle() {
+        let shortMessage = Dialog(title: "Cleanup complete", message: [Span("1 KB removed")])
+        XCTAssertEqual(render(shortMessage, in: area).rows, [
+            "╭─ Cleanup complete ─╮",
+            "│ 1 KB removed       │",
+            "╰────────────────────╯"
+        ])
+        let titleOnly = Dialog(title: "Removing 2 items…")
+        XCTAssertEqual(render(titleOnly, in: area).rows, [
+            "╭─ Removing 2 items… ─╮",
+            "╰─────────────────────╯"
+        ])
+    }
+}

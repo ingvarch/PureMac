@@ -64,8 +64,13 @@ enum HomeMenu {
             case 5: try Ignore.List.parse([]).run()
             default: return
             }
+            guard waitsForReturn(afterChoice: choice) else { continue }
             print(Term.dim("\nPress Return to return to PureMac."), terminator: " ")
             guard readLine() != nil else { return }
         }
+    }
+
+    static func waitsForReturn(afterChoice choice: Int) -> Bool {
+        choice != 0 && choice != 1
     }
 }

@@ -138,3 +138,68 @@ public enum Term {
         return String(characters.reversed())
     }
 }
+
+extension Term {
+    public static func wrap(_ string: String, width: Int) -> [String] {
+        let safe = sanitize(string)
+        guard !safe.isEmpty else { return [""] }
+        var lines: [String] = []
+        var current = ""
+        var used = 0
+        for character in safe {
+            let characterWidth = max(0, displayWidth(String(character)))
+            if used + characterWidth > width && !current.isEmpty {
+                lines.append(current)
+                current = ""
+                used = 0
+            }
+            current.append(character)
+            used += characterWidth
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines.isEmpty ? [""] : lines
+    }
+
+    static func wordWrap(_ string: String, width: Int) -> [String] {
+        var lines: [String] = []
+        var current = ""
+        var gap = ""
+        for token in wordTokens(sanitize(string)) {
+            guard !token.isSpaces else {
+                gap = token.text
+                continue
+            }
+            let word = token.text
+            if displayWidth(word) <= width {
+                if current.isEmpty {
+                    current = word
+                } else if displayWidth(current) + displayWidth(gap) + displayWidth(word) <= width {
+                    current += gap + word
+                } else {
+                    lines.append(current)
+                    current = word
+                }
+                continue
+            }
+            if !current.isEmpty { lines.append(current) }
+            let pieces = wrap(word, width: width)
+            lines += pieces.dropLast()
+            current = pieces[pieces.count - 1]
+        }
+        lines.append(current)
+        return lines
+    }
+
+    private static func wordTokens(_ string: String) -> [(text: String, isSpaces: Bool)] {
+        var tokens: [(text: String, isSpaces: Bool)] = []
+        for character in string {
+            let isSpace = character == " "
+            if let last = tokens.last, last.isSpaces == isSpace {
+                tokens[tokens.count - 1].text.append(character)
+            } else {
+                tokens.append((String(character), isSpace))
+            }
+        }
+        return tokens
+    }
+}

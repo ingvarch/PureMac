@@ -53,12 +53,28 @@ struct Clean: ParsableCommand {
 
         let ids = category.map { [$0] } ?? Clean.validIDs
         let ignore = try IgnoreStore(fileURL: AppPaths.ignoreFile)
-        if !json {
-            Term.err(Term.dim("Scanning " + ids.map(Clean.title).joined(separator: ", ") + " …"))
+        let scanning = "Scanning " + ids.map(Clean.title).joined(separator: ", ") + " …"
+        let progress = ScanProgress.forMode(mode)
+        let scan = {
+            ids.map { id in
+                CategoryScanner.scan(categoryID: id, title: Clean.title(id), ignore: ignore, progress: progress)
+            }.filter { !$0.groups.isEmpty }
         }
-        let cats = ids.map { id in
-            CategoryScanner.scan(categoryID: id, title: Clean.title(id), ignore: ignore)
-        }.filter { !$0.groups.isEmpty }
+        if mode == .fullscreen {
+            let labels = CleanupFlow.Labels(
+                scanning: scanning,
+                empty: Clean.emptyMessage,
+                reviewTitle: "Choose items to clean",
+                noun: "item"
+            )
+            let result = try CleanupFlow.run(labels: labels, ignore: ignore, scan: scan)
+            try CleanupFlow.finish(result, labels: labels)
+            return
+        }
+        if !json {
+            Term.err(Term.dim(scanning))
+        }
+        let cats = scan()
 
         if json {
             print(try JSONReport.string(cats))
@@ -66,7 +82,7 @@ struct Clean: ParsableCommand {
         }
 
         if cats.isEmpty {
-            print(Term.green("No cleanup candidates found in readable locations."))
+            print(Term.green(Clean.emptyMessage))
             return
         }
 
@@ -85,19 +101,13 @@ struct Clean: ParsableCommand {
             reviewed = cats
             Render.scanResults(cats)
             Render.selectionLine(cats)
-        case .fullscreen:
-            guard let selection = try InteractiveReview.select(cats, title: "Choose items to clean") else {
-                print(Term.dim("Cancelled. Nothing removed."))
-                return
-            }
-            reviewed = selection
         case .plain:
             guard let selection = try PlainSelectionReview.select(cats, title: "Choose items to clean") else {
                 print(Term.dim("Cancelled. Nothing removed."))
                 return
             }
             reviewed = selection
-        case .reportOnly, .unavailable:
+        case .fullscreen, .reportOnly, .unavailable:
             return
         }
 
@@ -120,6 +130,8 @@ struct Clean: ParsableCommand {
         Render.cleanupSummary(out, dryRun: false)
         if out.hadFailures { throw ExitCode.failure }
     }
+
+    static let emptyMessage = "No cleanup candidates found in readable locations."
 
     static func title(_ id: String) -> String {
         Catalog.categoryTitles.first { $0.id == id }?.title ?? id.capitalized

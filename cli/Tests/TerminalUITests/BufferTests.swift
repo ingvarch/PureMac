@@ -162,4 +162,45 @@ final class BufferTests: XCTestCase {
         }
         XCTAssertEqual(buffer.plainLines(), ["界界 ", "a界  "])
     }
+
+    func testClearBlanksRectAndKeepsOutside() {
+        var buffer = Buffer(width: 5, height: 3)
+        for row in 0..<3 { buffer.write("xxxxx", x: 0, y: row, style: TextStyle(bold: true)) }
+        buffer.clear(Rect(x: 1, y: 1, width: 3, height: 1))
+        XCTAssertEqual(buffer.plainLines(), ["xxxxx", "x   x", "xxxxx"])
+        XCTAssertEqual(buffer[2, 1], Cell(symbol: " ", style: .plain))
+    }
+
+    func testClearIsClippedToBuffer() {
+        var buffer = Buffer(width: 3, height: 2)
+        for row in 0..<2 { buffer.write("xxx", x: 0, y: row) }
+        buffer.clear(Rect(x: -2, y: 1, width: 4, height: 5))
+        XCTAssertEqual(buffer.plainLines(), ["xxx", "  x"])
+        buffer.clear(Rect(x: 5, y: 5, width: 2, height: 2))
+        buffer.clear(Rect(x: 0, y: 0, width: 0, height: 2))
+        XCTAssertEqual(buffer.plainLines(), ["xxx", "  x"])
+    }
+
+    func testClearBlanksOutsideHalfOfWideCharacterOnEdges() {
+        var buffer = Buffer(width: 6, height: 1)
+        buffer.write("界界界", x: 0, y: 0)
+        buffer.clear(Rect(x: 1, y: 0, width: 4, height: 1))
+        XCTAssertEqual(buffer.plainLines(), ["      "])
+        var inner = Buffer(width: 6, height: 1)
+        inner.write("界界界", x: 0, y: 0)
+        inner.clear(Rect(x: 2, y: 0, width: 2, height: 1))
+        XCTAssertEqual(inner.plainLines(), ["界  界"])
+    }
+
+    func testFadeKeepsSymbolsAndMakesEverythingDim() {
+        var buffer = Buffer(width: 4, height: 2)
+        buffer.write("a界", x: 0, y: 0, style: TextStyle(color: .red, bold: true, inverse: true))
+        buffer.fade()
+        let dim = TextStyle(dim: true)
+        XCTAssertEqual(buffer.plainLines(), ["a界 ", "    "])
+        XCTAssertEqual(buffer[0, 0], Cell(symbol: "a", style: dim))
+        XCTAssertEqual(buffer[1, 0], Cell(symbol: "界", style: dim))
+        XCTAssertEqual(buffer[2, 0], Cell(symbol: "", style: dim))
+        XCTAssertEqual(buffer[0, 1], Cell(symbol: " ", style: dim))
+    }
 }

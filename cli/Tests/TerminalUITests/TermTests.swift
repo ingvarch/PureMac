@@ -1,5 +1,5 @@
 import XCTest
-import TerminalUI
+@testable import TerminalUI
 
 final class TermTests: XCTestCase {
     func testANSIAndUnicodeDisplayWidth() {
@@ -26,5 +26,31 @@ final class TermTests: XCTestCase {
         XCTAssertEqual(Term.bar(fraction: 3, width: 3), "███")
         XCTAssertEqual(Term.bar(fraction: 0.5, width: -2), "")
         XCTAssertEqual(Term.bar(fraction: 0.5).count, 24)
+    }
+
+    func testWrapPreservesEveryCharacter() {
+        let path = "/Users/example/a folder/with/a/very-long-name/file.bin"
+        let lines = Term.wrap(path, width: 11)
+
+        XCTAssertGreaterThan(lines.count, 1)
+        XCTAssertEqual(lines.joined(), path)
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) <= 11 })
+    }
+
+    func testWordWrapKeepsSpaceRunsWithinALine() {
+        XCTAssertEqual(Term.wordWrap("one   two  three", width: 12), ["one   two", "three"])
+        XCTAssertEqual(Term.wordWrap("1 skipped  protected or ignored", width: 40), ["1 skipped  protected or ignored"])
+    }
+
+    func testWordWrapDropsSpaceRunAtALineBreak() {
+        XCTAssertEqual(Term.wordWrap("one   two  three", width: 7), ["one", "two", "three"])
+    }
+
+    func testWordWrapEmptyParagraphIsOneEmptyRow() {
+        XCTAssertEqual(Term.wordWrap("", width: 10), [""])
+    }
+
+    func testWordWrapHardBreaksLongWord() {
+        XCTAssertEqual(Term.wordWrap("ab abcdefg", width: 3), ["ab", "abc", "def", "g"])
     }
 }
