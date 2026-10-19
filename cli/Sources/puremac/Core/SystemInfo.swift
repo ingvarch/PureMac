@@ -68,6 +68,45 @@ struct VolumeStatus: Equatable {
     }
 }
 
+struct MachineInfo: Equatable {
+    let chip: String?
+    let cores: String?
+    let memory: Int64?
+    let macOS: String
+    let model: String?
+    let uptime: TimeInterval
+}
+
+struct Sysctl {
+    let string: (String) -> String?
+    let int: (String) -> Int64?
+
+    static let system = Sysctl(string: readString, int: readInt)
+
+    private static func readString(_ name: String) -> String? {
+        var size = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
+        return String(cString: buffer)
+    }
+
+    private static func readInt(_ name: String) -> Int64? {
+        var size = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0 else { return nil }
+        switch size {
+        case MemoryLayout<Int32>.size:
+            var value: Int32 = 0
+            return sysctlbyname(name, &value, &size, nil, 0) == 0 ? Int64(value) : nil
+        case MemoryLayout<Int64>.size:
+            var value: Int64 = 0
+            return sysctlbyname(name, &value, &size, nil, 0) == 0 ? value : nil
+        default:
+            return nil
+        }
+    }
+}
+
 enum SystemInfoError: LocalizedError {
     case memoryUnavailable(kern_return_t)
     case volumeUnavailable(String)
@@ -111,10 +150,7 @@ enum SystemInfo {
     }
 
     static func memoryPressure() -> MemoryPressure? {
-        var level: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return nil }
-        return MemoryPressure(level: Int(level))
+        Sysctl.system.int("kern.memorystatus_vm_pressure_level").flatMap { MemoryPressure(level: Int($0)) }
     }
 
     static func volumeStatus(_ path: String) throws -> VolumeStatus {
@@ -137,4 +173,28 @@ enum SystemInfo {
         )
     }
 
+    static func machine(
+        sysctl: Sysctl = .system,
+        version: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
+        uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> MachineInfo {
+        var macOS = "\(version.majorVersion).\(version.minorVersion)"
+        if version.patchVersion > 0 { macOS += ".\(version.patchVersion)" }
+        if let build = sysctl.string("kern.osversion") { macOS += " (\(build))" }
+        return MachineInfo(
+            chip: sysctl.string("machdep.cpu.brand_string"),
+            cores: coreSummary(sysctl),
+            memory: sysctl.int("hw.memsize"),
+            macOS: macOS,
+            model: sysctl.string("hw.model"),
+            uptime: uptime
+        )
+    }
+
+    private static func coreSummary(_ sysctl: Sysctl) -> String? {
+        if let performance = sysctl.int("hw.perflevel0.physicalcpu"), let efficiency = sysctl.int("hw.perflevel1.physicalcpu") {
+            return "\(CleanupFlow.counted(Int(performance + efficiency), "core")) (\(performance) performance, \(efficiency) efficiency)"
+        }
+        return sysctl.int("hw.ncpu").map { CleanupFlow.counted(Int($0), "core") }
+    }
 }

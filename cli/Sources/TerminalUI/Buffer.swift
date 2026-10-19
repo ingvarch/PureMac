@@ -14,7 +14,23 @@ public struct Rect: Equatable {
     }
 
     public func splitRows(_ constraints: [RowConstraint]) -> [Rect] {
-        var remaining = max(0, height)
+        var top = y
+        return Rect.sizes(constraints, total: height).map { rowHeight in
+            defer { top += rowHeight }
+            return Rect(x: x, y: top, width: width, height: rowHeight)
+        }
+    }
+
+    public func splitColumns(_ constraints: [RowConstraint]) -> [Rect] {
+        var left = x
+        return Rect.sizes(constraints, total: width).map { columnWidth in
+            defer { left += columnWidth }
+            return Rect(x: left, y: y, width: columnWidth, height: height)
+        }
+    }
+
+    private static func sizes(_ constraints: [RowConstraint], total: Int) -> [Int] {
+        var remaining = max(0, total)
         let fixed: [Int?] = constraints.map { constraint in
             guard case .length(let length) = constraint else { return nil }
             let taken = min(max(0, length), remaining)
@@ -23,17 +39,10 @@ public struct Rect: Equatable {
         }
         let fills = fixed.filter { $0 == nil }.count
         var fillIndex = 0
-        let heights: [Int] = fixed.map { height in
-            if let height { return height }
+        return fixed.map { size in
+            if let size { return size }
             defer { fillIndex += 1 }
             return remaining / fills + (fillIndex < remaining % fills ? 1 : 0)
-        }
-
-        var top = y
-        return heights.map { rowHeight in
-            let row = Rect(x: x, y: top, width: width, height: rowHeight)
-            top += row.height
-            return row
         }
     }
 }

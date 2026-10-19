@@ -41,10 +41,10 @@ final class OptimizeConfigTests: XCTestCase {
         let memory = MemoryStatus(total: 17_179_869_184, free: 4_294_967_296, inactive: 1_073_741_824,
                                   active: 2_147_483_648, wired: 3_221_225_472, compressed: 536_870_912)
         let volume = VolumeStatus(availableNow: 107_374_182_400, availableForImportantUsage: 161_061_273_600, total: 536_870_912_000)
-        let sheet = Optimize.statusSheet(memory: memory, pressure: .normal, volume: volume, uptime: 176_461)
+        let sheet = Optimize.statusSheet(memory: memory, pressure: .normal, volume: volume, machine: testMachine)
         XCTAssertEqual(sheet.plainLines(colors: false), goldenStatus)
         XCTAssertEqual(
-            Optimize.statusSheet(memory: memory, pressure: nil, volume: volume, uptime: 176_461).plainLines(colors: false),
+            Optimize.statusSheet(memory: memory, pressure: nil, volume: volume, machine: testMachine).plainLines(colors: false),
             goldenStatus.filter { !$0.hasPrefix("  Pressure") }
         )
     }
@@ -62,8 +62,9 @@ final class OptimizeConfigTests: XCTestCase {
     func testStatusViewPrintsTheSheetLinesWithoutEscapeCodes() throws {
         let output = try captureStdout { try Optimize.parse([]).run() }
         let lines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        XCTAssertEqual(lines.prefix(4), ["Mac status", "Read-only measurements from macOS", "", "Memory"])
-        XCTAssertEqual(lines.filter { $0 == "Storage" || $0.hasPrefix("  Uptime  ") }.count, 2)
+        XCTAssertEqual(lines.prefix(4), ["Mac status", "Read-only measurements from macOS", "", "This Mac"])
+        XCTAssertEqual(lines.filter { $0 == "This Mac" || $0 == "Memory" || $0 == "Storage" }, ["This Mac", "Memory", "Storage"])
+        XCTAssertEqual(lines.filter { $0.hasPrefix("  Uptime  ") }.count, 1)
         XCTAssertEqual(lines.last(where: { !$0.isEmpty }), "No maintenance ran. Use `puremac clean --dry-run` to review removable files.")
         XCTAssertTrue(lines.allSatisfy { !$0.contains("\u{1B}") })
     }
@@ -271,15 +272,12 @@ final class SystemStatusTests: XCTestCase {
         XCTAssertEqual(rows.count, 4)
     }
 
-    func testStatusSheetHasTitleSubtitleSectionsUptimeAndFootnote() {
+    func testStatusSheetHasTitleSubtitleSectionsAndFootnote() {
         let volume = VolumeStatus(availableNow: 50, availableForImportantUsage: 50, total: 100)
-        let sheet = Optimize.statusSheet(memory: memory, pressure: .normal, volume: volume, uptime: 3_661)
+        let sheet = Optimize.statusSheet(memory: memory, pressure: .normal, volume: volume, machine: testMachine)
         XCTAssertEqual(sheet.title, "Mac status")
         XCTAssertEqual(sheet.subtitle, "Read-only measurements from macOS")
-        XCTAssertEqual(sheet.sections.map(\.title), ["Memory", "Storage", nil])
-        XCTAssertEqual(sheet.sections[2].rows.count, 1)
-        guard case .message(let uptime) = sheet.sections[2].rows[0] else { return XCTFail("uptime message") }
-        XCTAssertEqual(uptime, [Span("Uptime", TextStyle(dim: true)), Span("  1h 1m")])
+        XCTAssertEqual(sheet.sections.map(\.title), ["This Mac", "Memory", "Storage"])
         XCTAssertEqual(sheet.footnote, "No maintenance ran. Use `puremac clean --dry-run` to review removable files.")
     }
 }
@@ -287,6 +285,14 @@ final class SystemStatusTests: XCTestCase {
 private let goldenStatus: [String] = [
     "Mac status",
     "Read-only measurements from macOS",
+    "",
+    "This Mac",
+    "  Chip              Apple M4 Pro",
+    "  Cores             14 cores (10 performance, 4 efficiency)",
+    "  Memory            25.8 GB",
+    "  macOS             26.0.1 (25A354)",
+    "  Model             Mac16,7",
+    "  Uptime            2d 1h 1m",
     "",
     "Memory",
     "  ███████████████░░░░░ 12.9 GB in use of 17.2 GB",
@@ -304,8 +310,6 @@ private let goldenStatus: [String] = [
     "  Total             536.9 GB",
     "  Managed by macOS  53.7 GB",
     "  Managed capacity may include purgeable files and is not guaranteed free space.",
-    "",
-    "  Uptime  2d 1h 1m",
     "",
     "No maintenance ran. Use `puremac clean --dry-run` to review removable files.",
 ]
@@ -334,3 +338,8 @@ private let goldenPurgeable: [String] = [
     "",
     "No storage was changed. APFS managed capacity is an estimate controlled by macOS.",
 ]
+
+private let testMachine = MachineInfo(
+    chip: "Apple M4 Pro", cores: "14 cores (10 performance, 4 efficiency)", memory: 25_769_803_776,
+    macOS: "26.0.1 (25A354)", model: "Mac16,7", uptime: 176_461
+)

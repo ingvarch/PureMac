@@ -33,6 +33,7 @@ enum HomeMenu {
     static let title = "PureMac"
     static let subtitle = "Your Mac, with room to work.  /  \(puremacVersion)"
     static let exploreIndex = 2
+    static let statusIndex = 3
     static let preferencesIndex = 4
     static let protectedPathsIndex = 5
     static let options: [(title: String, detail: String)] = [
@@ -48,12 +49,6 @@ enum HomeMenu {
         var focus = 0
         while let choice = try TerminalMenu.choose(title: title, subtitle: subtitle, options: options, initialSelection: focus) {
             focus = choice
-            if let sheet = sheet(forChoice: choice) {
-                let session = try TerminalSession()
-                defer { session.close() }
-                sheet.show(in: session)
-                continue
-            }
             switch choice {
             case 0:
                 guard let category = try TerminalMenu.choose(
@@ -73,6 +68,10 @@ enum HomeMenu {
             case exploreIndex:
                 guard try ExploreConfirmation.ask() else { continue }
                 try Analyze.parse([]).run()
+            case statusIndex:
+                let session = try TerminalSession()
+                defer { session.close() }
+                SystemStatusScreen.run(in: session)
             case preferencesIndex:
                 let session = try TerminalSession()
                 defer { session.close() }
@@ -83,13 +82,6 @@ enum HomeMenu {
                 PathListEditor.run(.protectedPaths, in: session)
             default: return
             }
-        }
-    }
-
-    static func sheet(forChoice choice: Int) -> InfoSheet? {
-        switch choice {
-        case 3: return InfoSheet.loading(title: Optimize.statusTitle, Optimize.currentStatusSheet)
-        default: return nil
         }
     }
 }

@@ -328,9 +328,4 @@ final class PreferencesScreenTests: XCTestCase {
             }
         }
     }
-
-    func testHomeMenuOpensAnInfoSheetOnlyForStatus() {
-        for choice in [0, 1, 2, 4, 5, 6] { XCTAssertNil(HomeMenu.sheet(forChoice: choice), "\(choice)") }
-        XCTAssertEqual(HomeMenu.sheet(forChoice: 3)?.title, "Mac status")
-    }
 }

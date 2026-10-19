@@ -26,6 +26,28 @@ final class BufferTests: XCTestCase {
         XCTAssertEqual(rows.map(\.y), [0, 3, 5, 5])
     }
 
+    func testSplitColumnsLengthsAndFills() {
+        let rect = Rect(x: 3, y: 2, width: 10, height: 4)
+        let columns = rect.splitColumns([.length(2), .fill, .length(3)])
+        XCTAssertEqual(columns, [
+            Rect(x: 3, y: 2, width: 2, height: 4),
+            Rect(x: 5, y: 2, width: 5, height: 4),
+            Rect(x: 10, y: 2, width: 3, height: 4)
+        ])
+    }
+
+    func testSplitColumnsFillsShareRemainderToFirst() {
+        let columns = Rect(x: 0, y: 0, width: 7, height: 4).splitColumns([.fill, .fill, .fill])
+        XCTAssertEqual(columns.map(\.width), [3, 2, 2])
+        XCTAssertEqual(columns.map(\.x), [0, 3, 5])
+    }
+
+    func testSplitColumnsOverflowGivesLaterItemsNoWidth() {
+        let columns = Rect(x: 0, y: 0, width: 5, height: 4).splitColumns([.length(3), .length(4), .length(2), .fill])
+        XCTAssertEqual(columns.map(\.width), [3, 2, 0, 0])
+        XCTAssertEqual(columns.map(\.x), [0, 3, 5, 5])
+    }
+
     func testNewBufferIsBlankAndClamped() {
         let buffer = Buffer(width: 3, height: 2)
         XCTAssertEqual(buffer.area, Rect(x: 0, y: 0, width: 3, height: 2))
