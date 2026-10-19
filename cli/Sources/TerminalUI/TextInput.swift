@@ -5,13 +5,13 @@ public struct TextInput: Equatable {
         self.text = text
     }
 
-    public var isEmpty: Bool { text.isEmpty }
+    var isEmpty: Bool { text.isEmpty }
 
-    public mutating func insert(_ character: Character) {
+    mutating func insert(_ character: Character) {
         text.append(character)
     }
 
-    public mutating func backspace() {
+    mutating func backspace() {
         text = String(text.dropLast())
     }
 

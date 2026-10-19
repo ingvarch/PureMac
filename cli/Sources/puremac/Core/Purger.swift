@@ -54,7 +54,7 @@ enum Purger {
                 if isArtifact(name) {
                     en.skipDescendants()
                     if Safety.ignoredPathProtectsCandidate(url.path, ignore: ignore) { continue }
-                    let measurement = DirSizer.measure(of: url.path)
+                    let measurement = DirSizer.measure(of: url.path, isCancelled: isCancelled)
                     guard measurement.status == .complete,
                           measurement.bytes >= CategoryScanner.minSize else { continue }
                     let mod = DirSizer.modified(of: url.path)

@@ -19,6 +19,13 @@ final class CleanupFlowTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("Esc/q cancel") })
     }
 
+    func testScanningScreenHeadlineReadsCancellingOnceCancelRequested() {
+        let status = ScanStatus(headline: "Scanning Developer caches, 2 of 4")
+        let lines = CleanupFlow.scanningScreen(status: status, tick: 0, isCancelling: true, width: 60, height: 14).plainLines()
+        XCTAssertTrue(lines[1].contains("⠋ Cancelling…"), lines[1])
+        XCTAssertFalse(lines[1].contains("Developer"))
+    }
+
     func testScanningScreenSpinnerFollowsTheTick() {
         let status = ScanStatus(headline: "Scanning")
         let lines = CleanupFlow.scanningScreen(status: status, tick: 3, width: 60, height: 14).plainLines()

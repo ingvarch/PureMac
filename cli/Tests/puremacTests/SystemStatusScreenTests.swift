@@ -247,4 +247,40 @@ final class SystemStatusScreenTests: XCTestCase {
     func testHomeMenuStatusEntryIsSystemStatus() {
         XCTAssertEqual(HomeMenu.options[HomeMenu.statusIndex].title, "System status")
     }
+
+    func testWriteCutsAnOverlongRowWithAnEllipsis() {
+        var buffer = Buffer(width: 10, height: 1)
+        InfoSheet.write([Span(String(repeating: "a", count: 30))], in: Rect(x: 0, y: 0, width: 10, height: 1), buffer: &buffer)
+        XCTAssertEqual(buffer.plainLines(), ["aaaaaaaaa…"])
+        var fits = Buffer(width: 10, height: 1)
+        InfoSheet.write([Span("short")], in: Rect(x: 0, y: 0, width: 10, height: 1), buffer: &fits)
+        XCTAssertEqual(fits.plainLines()[0].trimmingCharacters(in: .whitespaces), "short")
+    }
+
+    func testScrollMovesByOneAndStaysInRange() {
+        var scroll = InfoSheetScroll()
+        XCTAssertFalse(scroll.handle(.up, maxOffset: 3))
+        XCTAssertEqual(scroll.offset, 0)
+        for _ in 0..<5 { XCTAssertFalse(scroll.handle(.down, maxOffset: 3)) }
+        XCTAssertEqual(scroll.offset, 3)
+        XCTAssertFalse(scroll.handle(.up, maxOffset: 3))
+        XCTAssertEqual(scroll.offset, 2)
+        XCTAssertFalse(scroll.handle(.down, maxOffset: 0))
+        XCTAssertEqual(scroll.offset, 0)
+    }
+
+    func testScrollClosesOnEscQEnterLeftAndBackspace() {
+        for key in [TerminalKey.escape, .enter, .left, .backspace, .character("q"), .character("Q")] {
+            var scroll = InfoSheetScroll()
+            XCTAssertTrue(scroll.handle(key, maxOffset: 3), "\(key)")
+        }
+    }
+
+    func testScrollIgnoresOtherKeys() {
+        for key in [TerminalKey.right, .tab, .space, .pageDown, .character("x"), .unknown] {
+            var scroll = InfoSheetScroll()
+            XCTAssertFalse(scroll.handle(key, maxOffset: 3), "\(key)")
+            XCTAssertEqual(scroll.offset, 0)
+        }
+    }
 }

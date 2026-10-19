@@ -297,6 +297,20 @@ final class DialogTests: XCTestCase {
         ])
     }
 
+    func testCenteredMessageWrapsBalancedAndLeadingKeepsGreedyWrap() {
+        let text = "Searching 1 folder for build artifacts can take a few minutes."
+        let wide = Rect(x: 0, y: 0, width: 64, height: 18)
+        var dialog = Dialog(title: "T", message: [Span(text)], buttons: [])
+        let centered = render(dialog, in: wide).rows.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "│ ")) }
+        XCTAssertTrue(centered.contains("Searching 1 folder for build"))
+        XCTAssertTrue(centered.contains("artifacts can take a few minutes."))
+
+        dialog.messageAlignment = .leading
+        let leading = render(dialog, in: wide).rows.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "│ ")) }
+        XCTAssertTrue(leading.contains("Searching 1 folder for build artifacts can take a few"))
+        XCTAssertTrue(leading.contains("minutes."))
+    }
+
     func testCenterMessageAlignmentIsTheDefault() {
         let dialog = Dialog(title: "T", message: [Span("a"), Span("longer text")])
         XCTAssertEqual(render(dialog, in: area).rows[2], "│       a       │")

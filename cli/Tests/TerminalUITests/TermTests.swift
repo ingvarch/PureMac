@@ -45,6 +45,23 @@ final class TermTests: XCTestCase {
         XCTAssertEqual(Term.wordWrap("one   two  three", width: 7), ["one", "two", "three"])
     }
 
+    func testBalancedWrapKeepsLineCountAndEvensTheLines() {
+        let text = "Searching 1 folder for build artifacts can take a few minutes."
+        XCTAssertEqual(Term.wordWrap(text, width: 54), ["Searching 1 folder for build artifacts can take a few", "minutes."])
+        XCTAssertEqual(Term.balancedWrap(text, width: 54), ["Searching 1 folder for build", "artifacts can take a few minutes."])
+        XCTAssertEqual(Term.balancedWrap(text, width: 30), ["Searching 1 folder for", "build artifacts can", "take a few minutes."])
+    }
+
+    func testBalancedWrapLeavesShortTextAndHardBreaksAlone() {
+        XCTAssertEqual(Term.balancedWrap("one two", width: 20), ["one two"])
+        XCTAssertEqual(Term.balancedWrap("", width: 10), [""])
+        XCTAssertEqual(Term.balancedWrap("ab abcdefg", width: 3), ["ab", "abc", "def", "g"])
+    }
+
+    func testBalancedWrapNeverBreaksAWordThatGreedyWrapKeptWhole() {
+        XCTAssertEqual(Term.balancedWrap("aaaa b", width: 5), ["aaaa", "b"])
+    }
+
     func testWordWrapEmptyParagraphIsOneEmptyRow() {
         XCTAssertEqual(Term.wordWrap("", width: 10), [""])
     }

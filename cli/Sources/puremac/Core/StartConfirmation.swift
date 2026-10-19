@@ -18,7 +18,7 @@ struct StartConfirmation {
     static func projectCleanup(folderCount: Int) -> StartConfirmation {
         StartConfirmation(
             title: "Scan your project folders?",
-            message: "Searching \(CleanupFlow.counted(folderCount, "folder")) for build artifacts can take a few minutes.",
+            message: "Searching \(Render.counted(folderCount, "folder")) for build artifacts can take a few minutes.",
             menuSelection: HomeMenu.projectCleanupIndex
         )
     }
@@ -46,6 +46,13 @@ struct StartConfirmation {
         }
     }
 
+    func acceptsKey(_ key: TerminalKey, tooSmall: Bool) -> Bool {
+        guard tooSmall else { return true }
+        if key == .escape { return true }
+        guard case .character(let character) = key else { return false }
+        return ["q", "n"].contains(String(character).lowercased())
+    }
+
     func render(width: Int, height: Int) -> Buffer {
         StatusScreen.overlay(dialog, on: HomeMenu.screen(selection: menuSelection, width: width, height: height), tooSmallExitHint: "Esc back")
     }
@@ -56,7 +63,10 @@ struct StartConfirmation {
         var model = self
         while true {
             session.draw(model.render(width: session.width, height: session.height))
-            if let choice = model.handle(session.readKey()) { return choice == .start }
+            let key = session.readKey()
+            let tooSmall = !TooSmallScreen.fits(width: session.width, height: session.height)
+            guard model.acceptsKey(key, tooSmall: tooSmall) else { continue }
+            if let choice = model.handle(key) { return choice == .start }
         }
     }
 

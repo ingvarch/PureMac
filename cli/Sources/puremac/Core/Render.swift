@@ -5,6 +5,7 @@ import TerminalUI
 enum Render {
     static let rule = String(repeating: "─", count: 60)
     static let sizeColumnWidth = 10
+    static let reviewHelp = "Return on the selection screen opens a confirmation with Cancel focused. --plain uses a numbered selector with ranges, all, and none, then prints the exact deletion review and asks (default No)."
 
     static func scanResults(_ categories: [CategoryScan], colors: Bool = Term.colorEnabled) {
         let total = categories.reduce(Int64(0)) { $0 + $1.allBytes }
@@ -108,8 +109,12 @@ enum Render {
 
     static let cleanupCompleteTitle = "Cleanup complete"
 
+    static func counted(_ count: Int, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
+    }
+
     static func itemCount(_ count: Int) -> String {
-        CleanupFlow.counted(count, "item")
+        counted(count, "item")
     }
 
     static func removedDetail(_ outcome: CleanOutcome) -> String {

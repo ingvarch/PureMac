@@ -37,6 +37,17 @@ final class StartConfirmationTests: XCTestCase {
         XCTAssertEqual(model.handle(.character("S")), .start)
     }
 
+    func testTooSmallScreenAcceptsOnlyEscapeQAndN() {
+        let model = StartConfirmation.explore
+        for key in [TerminalKey.escape, .character("q"), .character("Q"), .character("n"), .character("N")] {
+            XCTAssertTrue(model.acceptsKey(key, tooSmall: true))
+        }
+        for key in [TerminalKey.enter, .character("s"), .character("S"), .left, .right, .tab, .space] {
+            XCTAssertFalse(model.acceptsKey(key, tooSmall: true))
+            XCTAssertTrue(model.acceptsKey(key, tooSmall: false))
+        }
+    }
+
     func testOtherKeysDoNothing() {
         var model = StartConfirmation.explore
         for key in [TerminalKey.up, .down, .space, .character("x"), .character("y")] {
@@ -86,6 +97,20 @@ final class StartConfirmationTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("Project cleanup") })
     }
 
+    func testProjectCleanupMessageWrapsWithoutAnOrphanWord() {
+        let model = StartConfirmation.projectCleanup(folderCount: 1)
+        for (width, height) in [(64, 18), (40, 12)] {
+            let lines = model.render(width: width, height: height).plainLines()
+            let rows = lines.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "│╭╮╰╯─ ")) }
+            XCTAssertFalse(rows.contains("minutes."), "\(width)x\(height)")
+        }
+        let wide = model.render(width: 64, height: 18).plainLines().map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "│╭╮╰╯─ ")) }
+        XCTAssertTrue(wide.contains("Searching 1 folder for build"))
+        XCTAssertTrue(wide.contains("artifacts can take a few minutes."))
+        let narrow = model.render(width: 40, height: 12).plainLines().map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "│╭╮╰╯─ ")) }
+        XCTAssertTrue(narrow.contains("take a few minutes."))
+    }
+
     func testProjectCleanupMessageUsesTheSingularForOneFolder() {
         let message = StartConfirmation.projectCleanup(folderCount: 1).message
         XCTAssertEqual(message, "Searching 1 folder for build artifacts can take a few minutes.")
@@ -110,17 +135,42 @@ final class StartConfirmationTests: XCTestCase {
         XCTAssertTrue(project.contains { $0.contains("› 2.  Project cleanup") })
     }
 
-    func testNoConfirmationWithoutProjectFolders() {
-        XCTAssertNil(HomeMenu.projectCleanupConfirmation(folderCount: 0))
-        XCTAssertNotNil(HomeMenu.projectCleanupConfirmation(folderCount: 1))
+    func testProjectCleanupEntryAsksWhenFoldersExist() {
+        guard case .confirm(let confirmation) = HomeMenu.projectCleanupEntry(folderCount: { 2 }) else {
+            return XCTFail("expected a confirmation")
+        }
+        XCTAssertTrue(confirmation.message.contains("2 folders"))
     }
 
-    func testNoFoldersNoticeShowsAnInfoDialogOverTheFadedMenu() {
-        let buffer = HomeMenu.noFoldersNotice(width: 80, height: 24)
+    func testProjectCleanupEntryShowsTheNoFoldersNoticeWithoutFolders() {
+        guard case .notice(let message) = HomeMenu.projectCleanupEntry(folderCount: { 0 }) else {
+            return XCTFail("expected a notice")
+        }
+        XCTAssertEqual(message, Purge.noFoldersMessage)
+    }
+
+    func testProjectCleanupEntryTurnsAnInvalidProjectsFileIntoANotice() {
+        let error = StoreError.invalidProjectsFile("/tmp/projects")
+        guard case .notice(let message) = HomeMenu.projectCleanupEntry(folderCount: { throw error }) else {
+            return XCTFail("expected a notice")
+        }
+        XCTAssertEqual(message, error.localizedDescription)
+    }
+
+    func testNoticeShowsTheMessageInAnInfoDialogOverTheFadedMenu() {
+        let buffer = HomeMenu.projectCleanupNotice(message: Purge.noFoldersMessage, width: 80, height: 24)
         let lines = buffer.plainLines()
         XCTAssertTrue(lines.contains { $0.contains("No project folders configured. Add one in Preferences.") })
         XCTAssertTrue(lines.contains { $0.contains("› OK ‹") })
         XCTAssertTrue(lines.contains { $0.contains("Project cleanup") })
         XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
+    }
+
+    func testNoticeWithALongErrorWrapsInsideTheDialog() {
+        let message = StoreError.invalidProjectsFile("/Users/example/.config/puremac/projects").localizedDescription
+        let lines = HomeMenu.projectCleanupNotice(message: message, width: 40, height: 12).plainLines()
+        XCTAssertEqual(lines.count, 12)
+        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
+        XCTAssertTrue(lines.contains { $0.contains("› OK ‹") })
     }
 }

@@ -102,7 +102,7 @@ struct Analyze: ParsableCommand {
         case measured(Child)
     }
 
-    struct ScanProgress {
+    struct MeasureProgress {
         let path: String
         var position = 0
         var count = 0
@@ -163,7 +163,9 @@ struct Analyze: ParsableCommand {
                     isDirectory: kind.isDirectory, isPackage: kind.isPackage
                 ))
             }
-            if let child = measureChild(url, ignore: ignore, context: &context) {
+            let measured = measureChild(url, ignore: ignore, context: &context, isCancelled: isCancelled)
+            if isCancelled() { break }
+            if let child = measured {
                 children.append(child)
                 progress?(.measured(child))
             }
@@ -200,13 +202,15 @@ struct Analyze: ParsableCommand {
         return (isDirectory, isDirectory && values?.isPackage == true)
     }
 
-    private func measureChild(_ topURL: URL, ignore: IgnoreStore, context: inout MeasureContext) -> Child? {
+    private func measureChild(
+        _ topURL: URL, ignore: IgnoreStore, context: inout MeasureContext, isCancelled: () -> Bool
+    ) -> Child? {
         let path = topURL.path
         if Safety.ignoredPathProtectsCandidate(path, ignore: ignore) {
             context.skippedCount += 1
             return nil
         }
-        let measurement = DirSizer.measure(of: path)
+        let measurement = DirSizer.measure(of: path, isCancelled: isCancelled)
         switch measurement.status {
         case .symlink, .cloudOrDataless:
             context.skippedCount += max(1, measurement.skippedEntries)
@@ -355,17 +359,19 @@ struct Analyze: ParsableCommand {
 
     private func measure(_ path: String, ignore: IgnoreStore, session: TerminalSession, drillingDown: Bool) -> MeasureResult {
         var exitRequested = false
+        var isCancelling = false
         let snapshot = session.runWithSpinner(
-            progress: ScanProgress(path: (path as NSString).standardizingPath),
+            progress: MeasureProgress(path: (path as NSString).standardizingPath),
             render: { tick, progress in
                 Self.renderMeasuringBrowser(
-                    progress: progress, tick: tick, drillingDown: drillingDown,
+                    progress: progress, tick: tick, drillingDown: drillingDown, isCancelling: isCancelling,
                     width: session.width, height: session.height
                 )
             },
             onKey: { key, cancel in
                 guard let action = Self.measuringKeyAction(key, drillingDown: drillingDown) else { return }
                 if action == .exit { exitRequested = true }
+                isCancelling = true
                 cancel.cancel()
             },
             work: { progress, cancel in
@@ -458,14 +464,16 @@ struct Analyze: ParsableCommand {
 
     private struct Measuring {
         let tick: Int
-        let progress: ScanProgress
+        let progress: MeasureProgress
         let drillingDown: Bool
+        let isCancelling: Bool
 
         var hints: KeyHints { drillingDown ? drillDownHints : firstScanHints }
         var exitHint: String { drillingDown ? "Esc back  q exit" : exitText }
 
         var statusSpans: [Span] {
-            let status = progress.position == 0 ? "Measuring…" : "Measuring \(progress.position) of \(progress.count)"
+            let status = isCancelling ? StatusScreen.cancellingText
+                : progress.position == 0 ? "Measuring…" : "Measuring \(progress.position) of \(progress.count)"
             return [Span(Spinner.frame(tick: tick) + " " + status, TextStyle(dim: true))]
         }
 
@@ -478,7 +486,7 @@ struct Analyze: ParsableCommand {
     }
 
     static func renderMeasuringBrowser(
-        progress: ScanProgress, tick: Int, drillingDown: Bool, width: Int, height: Int
+        progress: MeasureProgress, tick: Int, drillingDown: Bool, isCancelling: Bool = false, width: Int, height: Int
     ) -> Buffer {
         let children = ranked(progress.measured)
         let snapshot = FolderSnapshot(
@@ -491,7 +499,7 @@ struct Analyze: ParsableCommand {
         )
         return render(
             level: BrowserLevel(snapshot: snapshot, selected: -1),
-            measuring: Measuring(tick: tick, progress: progress, drillingDown: drillingDown),
+            measuring: Measuring(tick: tick, progress: progress, drillingDown: drillingDown, isCancelling: isCancelling),
             width: width,
             height: height
         )

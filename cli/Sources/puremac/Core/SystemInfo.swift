@@ -193,8 +193,8 @@ enum SystemInfo {
 
     private static func coreSummary(_ sysctl: Sysctl) -> String? {
         if let performance = sysctl.int("hw.perflevel0.physicalcpu"), let efficiency = sysctl.int("hw.perflevel1.physicalcpu") {
-            return "\(CleanupFlow.counted(Int(performance + efficiency), "core")) (\(performance) performance, \(efficiency) efficiency)"
+            return "\(Render.counted(Int(performance + efficiency), "core")) (\(performance) performance, \(efficiency) efficiency)"
         }
-        return sysctl.int("hw.ncpu").map { CleanupFlow.counted(Int($0), "core") }
+        return sysctl.int("hw.ncpu").map { Render.counted(Int($0), "core") }
     }
 }

@@ -262,6 +262,26 @@ final class PathListEditorTests: XCTestCase {
         XCTAssertTrue(list.removed.isEmpty)
     }
 
+    func testRemovalPromptNAndQCancelWithoutRemovingOrLeaving() {
+        for key in [TerminalKey.character("n"), .character("N"), .character("q"), .character("Q")] {
+            let list = FakeList(["/a"])
+            var editor = editor(list, confirmsRemoval: true)
+            _ = editor.handle(.character("d"))
+            XCTAssertFalse(editor.handle(key), "\(key)")
+            XCTAssertNil(editor.confirmation, "\(key)")
+            XCTAssertTrue(list.removed.isEmpty, "\(key)")
+        }
+    }
+
+    func testRemovalPromptRemoveButtonIsNotTriggeredByForwardDelete() {
+        let list = FakeList(["/a"])
+        var editor = editor(list, confirmsRemoval: true)
+        _ = editor.handle(.character("d"))
+        XCTAssertFalse(editor.handle(.delete))
+        XCTAssertNotNil(editor.confirmation)
+        XCTAssertTrue(list.removed.isEmpty)
+    }
+
     func testRemovalPromptEnterOnRemoveDeletesThePath() {
         let list = FakeList(["/a", "/b"])
         var editor = editor(list, confirmsRemoval: true)
@@ -433,13 +453,20 @@ final class PathListEditorTests: XCTestCase {
         XCTAssertTrue(editor.acceptsKey(.escape, tooSmall: true))
         XCTAssertTrue(editor.acceptsKey(.enter, tooSmall: true))
         XCTAssertFalse(editor.acceptsKey(.right, tooSmall: true))
+        for key in ["n", "N", "q", "Q"] { XCTAssertTrue(editor.acceptsKey(.character(Character(key)), tooSmall: true), key) }
+        XCTAssertFalse(editor.acceptsKey(.character("y"), tooSmall: true))
         _ = editor.handle(.right)
         XCTAssertFalse(editor.acceptsKey(.enter, tooSmall: true))
         XCTAssertTrue(editor.acceptsKey(.enter, tooSmall: false))
     }
 
+    func testForwardDeleteDoesNotLeaveTheList() {
+        var editor = editor(FakeList(["/a"]))
+        XCTAssertFalse(editor.handle(.delete))
+    }
+
     func testLeavesOnQLeftAndBackspaceToo() {
-        for key in [TerminalKey.character("q"), .character("Q"), .left, .backspace, .delete] {
+        for key in [TerminalKey.character("q"), .character("Q"), .left, .backspace] {
             var editor = editor(FakeList(["/a"]))
             XCTAssertTrue(editor.handle(key), "\(key)")
         }

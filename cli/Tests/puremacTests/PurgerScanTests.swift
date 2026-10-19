@@ -34,6 +34,20 @@ final class PurgerScanTests: XCTestCase {
         XCTAssertTrue(scan.groups.flatMap(\.items).allSatisfy(\.selected))
     }
 
+    func testCancelledArtifactMeasurementIsNotReportedAsAGroup() throws {
+        let modules = try artifact("alpha/node_modules", bytes: 4096)
+        for index in 0..<60 { try Data(repeating: 1, count: 4096).write(to: modules.appendingPathComponent("file-\(index).bin")) }
+        var checks = 0
+
+        let scan = Purger.scan(roots: [root.path], olderThanDays: 0, ignore: try ignoreStore(), isCancelled: {
+            checks += 1
+            return checks > 2
+        })
+
+        XCTAssertTrue(scan.groups.isEmpty)
+        XCTAssertLessThan(checks, 20)
+    }
+
     func testRecentArtifactsStayUnselectedAndEmptyOnesAreSkipped() throws {
         try artifact("alpha/node_modules", bytes: 8192)
         try fileManager.createDirectory(at: root.appendingPathComponent("alpha/venv"), withIntermediateDirectories: true)

@@ -61,15 +61,6 @@ struct InfoSheet {
     private static func wrapped(_ spans: [Span], indent: String, width: Int) -> [[Span]] {
         Term.wordWrap(spans, width: max(1, width - indent.count)).map { [Span(indent)] + $0 }
     }
-
-    static func write(_ spans: [Span], in rect: Rect, buffer: inout Buffer) {
-        guard Term.displayWidth(spans) > rect.width else {
-            buffer.write(spans, x: rect.x, y: rect.y, maxWidth: rect.width)
-            return
-        }
-        let used = buffer.write(spans, x: rect.x, y: rect.y, maxWidth: rect.width - 1)
-        buffer.write("…", x: rect.x + used, y: rect.y)
-    }
 }
 
 struct InfoSection {
@@ -83,19 +74,4 @@ enum InfoRow {
     case gauge(fraction: Double, color: TerminalColor?, text: String)
     case message([Span])
     case path(String)
-}
-
-struct InfoSheetScroll {
-    private(set) var offset = 0
-
-    mutating func handle(_ key: TerminalKey, maxOffset: Int) -> Bool {
-        switch key {
-        case .up: offset = max(0, min(offset, maxOffset) - 1)
-        case .down: offset = min(maxOffset, offset + 1)
-        case .escape, .enter, .left, .backspace: return true
-        case .character(let character): return character.lowercased() == "q"
-        default: break
-        }
-        return false
-    }
 }

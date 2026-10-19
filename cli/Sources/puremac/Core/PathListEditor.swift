@@ -118,6 +118,7 @@ struct PathListEditor {
     func acceptsKey(_ key: TerminalKey, tooSmall: Bool) -> Bool {
         guard tooSmall else { return true }
         if let confirmation {
+            if case .character(let character) = key, ["n", "q"].contains(character.lowercased()) { return true }
             return key == .escape || (key == .enter && confirmation.index == Self.cancelIndex)
         }
         return key == .escape
@@ -127,7 +128,7 @@ struct PathListEditor {
         switch key {
         case .up: move(-1)
         case .down: move(1)
-        case .escape, .left, .backspace, .delete: return true
+        case .escape, .left, .backspace: return true
         case .character(let character):
             switch character.lowercased() {
             case "q": return true
@@ -165,6 +166,7 @@ struct PathListEditor {
             confirmation = nil
             if buttons.index == Self.removeIndex { removeFocused() }
         case .escape: confirmation = nil
+        case .character(let character) where ["n", "q"].contains(character.lowercased()): confirmation = nil
         default: break
         }
     }

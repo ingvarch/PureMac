@@ -95,4 +95,10 @@ final class PureMacTests: XCTestCase {
         XCTAssertFalse(Safety.canRemove(tmp, ignore: ig).ok)
         _ = try ig.remove(tmp)
     }
+
+    func testCountedUsesTheSingularOnlyForOne() {
+        XCTAssertEqual(Render.counted(0, "item"), "0 items")
+        XCTAssertEqual(Render.counted(1, "folder"), "1 folder")
+        XCTAssertEqual(Render.counted(2, "core"), "2 cores")
+    }
 }

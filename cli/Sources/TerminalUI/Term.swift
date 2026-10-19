@@ -144,8 +144,15 @@ extension Term {
         return (lines + [last]).map { String($0.map(\.character)) }
     }
 
-    public static func wordWrap(_ string: String, width: Int) -> [String] {
+    static func wordWrap(_ string: String, width: Int) -> [String] {
         wordWrap([Span(string)], width: width).map { $0.map(\.text).joined() }
+    }
+
+    static func balancedWrap(_ string: String, width: Int) -> [String] {
+        let lineCount = wordWrap(string, width: width).count
+        let widestWord = string.split(whereSeparator: \.isWhitespace).map { displayWidth(String($0)) }.max() ?? 1
+        let narrowest = (min(max(1, width), widestWord)...max(1, width)).first { wordWrap(string, width: $0).count == lineCount } ?? width
+        return wordWrap(string, width: narrowest)
     }
 
     public static func wordWrap(_ spans: [Span], width: Int) -> [[Span]] {

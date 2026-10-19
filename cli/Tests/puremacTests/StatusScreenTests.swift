@@ -3,7 +3,8 @@ import XCTest
 import TerminalUI
 
 final class StatusScreenTests: XCTestCase {
-    private let hint = KeyHint("Ctrl+C", "cancel")
+    private let hint = StatusScreen.scanHint
+    private let hintText = "\(StatusScreen.scanHint.key) \(StatusScreen.scanHint.action)"
 
     func testRendersWindowRowsDividerAndHint() {
         let buffer = StatusScreen.render(
@@ -23,7 +24,7 @@ final class StatusScreenTests: XCTestCase {
         XCTAssertTrue(lines[1].contains("Working..."))
         XCTAssertTrue(lines[2].contains("…"))
         XCTAssertTrue(lines.contains { $0.hasPrefix("├") && $0.hasSuffix("┤") })
-        XCTAssertTrue(lines.contains { $0.contains("Ctrl+C cancel") })
+        XCTAssertTrue(lines.contains { $0.contains(hintText) })
         XCTAssertTrue(buffer[2, 1].style.dim)
     }
 
@@ -46,7 +47,7 @@ final class StatusScreenTests: XCTestCase {
     func testBelowMinimumUsesTooSmallScreenWithHintAsExit() {
         XCTAssertEqual(
             StatusScreen.render(title: "PureMac", rows: [StatusRow("x", style: TextStyle(dim: true)), StatusRow("")], hint: hint, width: 39, height: 11),
-            TooSmallScreen.render(title: "PureMac", exitHint: "Ctrl+C cancel", width: 39, height: 11)
+            TooSmallScreen.render(title: "PureMac", exitHint: hintText, width: 39, height: 11)
         )
     }
 
@@ -58,11 +59,11 @@ final class StatusScreenTests: XCTestCase {
         let result = StatusScreen.overlay(dialog, on: background)
         XCTAssertEqual(result[0, 0].style, TextStyle(dim: true))
         XCTAssertTrue(result.plainLines().contains { $0.contains("All good.") })
-        XCTAssertTrue(result.plainLines().contains { $0.contains("Ctrl+C cancel") })
+        XCTAssertTrue(result.plainLines().contains { $0.contains(hintText) })
     }
 
     func testOverlayLeavesTooSmallBackgroundUntouched() {
-        let background = TooSmallScreen.render(title: "PureMac", exitHint: "Ctrl+C cancel", width: 30, height: 8)
+        let background = TooSmallScreen.render(title: "PureMac", exitHint: hintText, width: 30, height: 8)
         let result = StatusScreen.overlay(Dialog(title: "Done", message: [Span("All good.")]), on: background)
         XCTAssertEqual(result, background)
     }
@@ -88,6 +89,6 @@ final class StatusScreenTests: XCTestCase {
         XCTAssertFalse(buffer[2, 2].style.dim)
         XCTAssertTrue(lines[3].contains("Third"))
         XCTAssertTrue(lines.contains { $0.hasPrefix("├") })
-        XCTAssertTrue(lines.contains { $0.contains("Ctrl+C cancel") })
+        XCTAssertTrue(lines.contains { $0.contains(hintText) })
     }
 }

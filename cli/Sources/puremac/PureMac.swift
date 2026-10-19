@@ -52,22 +52,34 @@ enum HomeMenu {
         )
     }
 
-    static func projectCleanupConfirmation(folderCount: Int) -> StartConfirmation? {
-        folderCount > 0 ? .projectCleanup(folderCount: folderCount) : nil
+    enum ProjectCleanupEntry {
+        case confirm(StartConfirmation)
+        case notice(String)
     }
 
-    static func noFoldersNotice(width: Int, height: Int) -> Buffer {
+    static func projectCleanupEntry(folderCount: () throws -> Int) -> ProjectCleanupEntry {
+        do {
+            let count = try folderCount()
+            return count > 0 ? .confirm(.projectCleanup(folderCount: count)) : .notice(Purge.noFoldersMessage)
+        } catch {
+            return .notice(error.localizedDescription)
+        }
+    }
+
+    static func projectCleanupNotice(message: String, width: Int, height: Int) -> Buffer {
         CleanupFlow.infoScreen(
             title: options[projectCleanupIndex].title,
-            message: Purge.noFoldersMessage,
+            message: message,
             on: screen(selection: projectCleanupIndex, width: width, height: height)
         )
     }
 
-    private static func showNoFoldersNotice() throws {
+    private static func showProjectCleanupNotice(_ message: String) throws {
         let session = try TerminalSession()
         defer { session.close() }
-        CleanupFlow.showInfo(on: session) { noFoldersNotice(width: session.width, height: session.height) }
+        CleanupFlow.showInfo(on: session) {
+            projectCleanupNotice(message: message, width: session.width, height: session.height)
+        }
     }
 
     static func run(setupError: Error?) throws {
@@ -90,12 +102,14 @@ enum HomeMenu {
                 let arguments = [[], ["dev"], ["junk"], ["ai"], ["trash"]]
                 try Clean.parse(arguments[category]).run()
             case projectCleanupIndex:
-                let folderCount = try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots.count
-                guard let confirmation = projectCleanupConfirmation(folderCount: folderCount) else {
-                    try showNoFoldersNotice()
+                let entry = projectCleanupEntry { try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots.count }
+                switch entry {
+                case .notice(let message):
+                    try showProjectCleanupNotice(message)
                     continue
+                case .confirm(let confirmation):
+                    guard try confirmation.ask() else { continue }
                 }
-                guard try confirmation.ask() else { continue }
                 try Purge.parse([]).run()
             case exploreIndex:
                 guard try StartConfirmation.explore.ask() else { continue }

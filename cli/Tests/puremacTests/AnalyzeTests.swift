@@ -17,6 +17,10 @@ final class AnalyzeTests: XCTestCase {
         root = nil
     }
 
+    private func emptyIgnore() throws -> IgnoreStore {
+        try IgnoreStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("analyze-ignore-\(UUID().uuidString)"))
+    }
+
     func testDepthValidationUsesDocumentedBounds() throws {
         var analyze = Analyze()
         analyze.depth = 1
@@ -44,7 +48,7 @@ final class AnalyzeTests: XCTestCase {
         try Data(repeating: 0x41, count: 8_192).write(to: small)
         try Data(repeating: 0x42, count: 1_000_000).write(to: contents.appendingPathComponent("payload.bin"))
 
-        let snapshot = Analyze().scanFolder(root.path)
+        let snapshot = Analyze().scanFolder(root.path, ignore: try emptyIgnore())
 
         XCTAssertEqual(snapshot.children.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["Example.app", "small.bin"])
         let packageChild = try XCTUnwrap(snapshot.children.first)
@@ -78,7 +82,7 @@ final class AnalyzeTests: XCTestCase {
         XCTAssertEqual(chmod(locked.path, 0), 0)
         defer { _ = chmod(locked.path, S_IRWXU) }
 
-        let snapshot = Analyze().scanFolder(root.path)
+        let snapshot = Analyze().scanFolder(root.path, ignore: try emptyIgnore())
 
         XCTAssertTrue(snapshot.isPartial)
         XCTAssertGreaterThan(snapshot.skippedCount + snapshot.inaccessibleCount, 0)
@@ -341,8 +345,8 @@ final class AnalyzeTests: XCTestCase {
     private func measuringProgress(
         position: Int = 3, count: Int = 5, name: String = "Library", isPackage: Bool = false,
         measured: [Analyze.Child]? = nil
-    ) -> Analyze.ScanProgress {
-        Analyze.ScanProgress(
+    ) -> Analyze.MeasureProgress {
+        Analyze.MeasureProgress(
             path: "/tmp", position: position, count: count, name: name, nameIsDirectory: true,
             nameIsPackage: isPackage,
             measured: measured ?? [child("/tmp/small", size: 1_000), child("/tmp/big", size: 5_000)]
@@ -350,7 +354,7 @@ final class AnalyzeTests: XCTestCase {
     }
 
     private func measuringLines(
-        _ progress: Analyze.ScanProgress, drillingDown: Bool = false, width: Int = 60, height: Int = 14
+        _ progress: Analyze.MeasureProgress, drillingDown: Bool = false, width: Int = 60, height: Int = 14
     ) -> [String] {
         Analyze.renderMeasuringBrowser(
             progress: progress, tick: 2, drillingDown: drillingDown, width: width, height: height
@@ -363,14 +367,14 @@ final class AnalyzeTests: XCTestCase {
         try Data(repeating: 0x42, count: 8_192).write(to: root.appendingPathComponent("b-dir/x.bin"))
 
         var events: [Analyze.ScanEvent] = []
-        let snapshot = Analyze().scanFolder(root.path, progress: { events.append($0) })
+        let snapshot = Analyze().scanFolder(root.path, ignore: try emptyIgnore(), progress: { events.append($0) })
 
         XCTAssertEqual(events.count, 4)
         XCTAssertEqual(events[0], .measuring(position: 1, count: 2, name: "a.bin", isDirectory: false, isPackage: false))
         guard case .measured(let first) = events[1] else { return XCTFail("expected measured") }
         XCTAssertEqual(URL(fileURLWithPath: first.path).lastPathComponent, "a.bin")
         XCTAssertEqual(events[2], .measuring(position: 2, count: 2, name: "b-dir", isDirectory: true, isPackage: false))
-        XCTAssertEqual(snapshot, Analyze().scanFolder(root.path))
+        XCTAssertEqual(snapshot, Analyze().scanFolder(root.path, ignore: try emptyIgnore()))
     }
 
     func testScanStopsBetweenChildrenWhenCancelled() throws {
@@ -380,6 +384,7 @@ final class AnalyzeTests: XCTestCase {
         var measured = 0
         let snapshot = Analyze().scanFolder(
             root.path,
+            ignore: try emptyIgnore(),
             progress: { if case .measured = $0 { measured += 1 } },
             isCancelled: { measured >= 1 }
         )
@@ -388,8 +393,31 @@ final class AnalyzeTests: XCTestCase {
         XCTAssertEqual(snapshot.children.count, 1)
     }
 
-    func testScanProgressCollectsEvents() {
-        var progress = Analyze.ScanProgress(path: "/tmp")
+    func testScanStopsInsideALargeChildWhenCancelled() throws {
+        let big = root.appendingPathComponent("big", isDirectory: true)
+        try FileManager.default.createDirectory(at: big, withIntermediateDirectories: true)
+        for index in 0..<60 {
+            try Data(repeating: 0x41, count: 4_096).write(to: big.appendingPathComponent("file-\(index).bin"))
+        }
+        var checks = 0
+        let snapshot = Analyze().scanFolder(root.path, ignore: try emptyIgnore(), isCancelled: {
+            checks += 1
+            return checks > 3
+        })
+
+        XCTAssertTrue(snapshot.children.isEmpty)
+        XCTAssertLessThan(checks, 20)
+    }
+
+    func testMeasuringBrowserStatusReadsCancellingOnceCancelRequested() {
+        let lines = Analyze.renderMeasuringBrowser(
+            progress: measuringProgress(), tick: 2, drillingDown: true, isCancelling: true, width: 60, height: 14
+        ).plainLines()
+        XCTAssertEqual(lines[2], "│ ⠹ Cancelling…                                            │")
+    }
+
+    func testMeasureProgressCollectsEvents() {
+        var progress = Analyze.MeasureProgress(path: "/tmp")
         progress.apply(.measuring(position: 2, count: 4, name: "Docs", isDirectory: true, isPackage: true))
         XCTAssertEqual(progress.position, 2)
         XCTAssertEqual(progress.count, 4)
@@ -418,7 +446,7 @@ final class AnalyzeTests: XCTestCase {
 
     func testMeasuringBrowserBeforeFirstChildAndForFiles() {
         let start = Analyze.renderMeasuringBrowser(
-            progress: Analyze.ScanProgress(path: "/tmp"), tick: 0, drillingDown: false, width: 60, height: 14
+            progress: Analyze.MeasureProgress(path: "/tmp"), tick: 0, drillingDown: false, width: 60, height: 14
         ).plainLines()
         XCTAssertEqual(start[2], "│ ⠋ Measuring…                                             │")
         XCTAssertEqual(start[3], "│                                                          │")

@@ -14,6 +14,7 @@ struct StatusRow {
 
 enum StatusScreen {
     static let warningTitle = TextStyle(color: .yellow, bold: true)
+    static let cancellingText = "Cancelling…"
     static let scanHint = KeyHint("Esc/q", "cancel")
     static let warningBorder = TextStyle(color: .yellow)
     static let choiceHints = KeyHints([KeyHint("Enter", "select"), KeyHint("Esc", "back")])

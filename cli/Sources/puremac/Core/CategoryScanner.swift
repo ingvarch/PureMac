@@ -47,7 +47,7 @@ enum CategoryScanner {
         }
         candidates = uniqueCandidates(candidates)
         if isCancelled() { return [] }
-        let measurements = concurrentMeasurements(candidates.map { $0.path })
+        let measurements = concurrentMeasurements(candidates.map { $0.path }, isCancelled: isCancelled)
 
         var itemsByTarget = [Int: [ScanItem]](minimumCapacity: targets.count)
         for (i, c) in candidates.enumerated()
@@ -81,7 +81,7 @@ enum CategoryScanner {
         concurrentMeasurements(paths).map(\.bytes)
     }
 
-    static func concurrentMeasurements(_ paths: [String]) -> [DirSizer.Measurement] {
+    static func concurrentMeasurements(_ paths: [String], isCancelled: () -> Bool = { false }) -> [DirSizer.Measurement] {
         guard !paths.isEmpty else { return [] }
         var out = [DirSizer.Measurement](
             repeating: DirSizer.Measurement(bytes: 0, status: .unavailable, skippedEntries: 1),
@@ -89,7 +89,7 @@ enum CategoryScanner {
         )
         out.withUnsafeMutableBufferPointer { buf in
             DispatchQueue.concurrentPerform(iterations: paths.count) { i in
-                buf[i] = DirSizer.measure(of: paths[i])
+                buf[i] = DirSizer.measure(of: paths[i], isCancelled: isCancelled)
             }
         }
         return out
@@ -136,7 +136,7 @@ enum CategoryScanner {
             guard let children = try? fm.contentsOfDirectory(atPath: root), !children.isEmpty else { continue }
             let paths = children.map { "\(root)/\($0)" }.filter { passesPreFilter($0, ignore: ignore) }
             let unique = uniqueCandidates(paths.map { (target: 0, path: $0) })
-            let measurements = concurrentMeasurements(unique.map(\.path))
+            let measurements = concurrentMeasurements(unique.map(\.path), isCancelled: isCancelled)
             let items = zip(unique.map(\.path), measurements).compactMap { (path, measurement) -> ScanItem? in
                 measurement.status == .complete && measurement.bytes >= minSize
                     ? ScanItem(path: path, sizeBytes: measurement.bytes, modified: DirSizer.modified(of: path))

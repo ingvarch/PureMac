@@ -11,7 +11,7 @@ struct Purge: ParsableCommand {
           puremac purge                 Scan the configured project folders
           puremac purge ~/Work/app      Scan a specific folder
 
-        Finishing the selector only opens an exact deletion review; a separate confirmation defaults to No. --plain uses a numbered selector with ranges, all, and none. --force removes only artifacts older than the configured threshold without either prompt. --dry-run and --json never delete or open a selector.
+        \(Render.reviewHelp) --force removes only artifacts older than the configured threshold without either prompt. --dry-run and --json never delete or open a selector.
         """
     )
 

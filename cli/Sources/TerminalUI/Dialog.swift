@@ -134,7 +134,7 @@ public struct Dialog {
         let buttonRows = self.buttonRows(width: contentWidth).count
         let tailRows = buttonRows + hintRows
         let wrapped = message.flatMap { paragraph in
-            Term.wordWrap(paragraph.text, width: contentWidth).map { Span($0, paragraph.style) }
+            wrap(paragraph.text, width: contentWidth).map { Span($0, paragraph.style) }
         }
         var layout = Layout(messageRows: wrapped, hintRows: hintRows, buttonRows: buttonRows)
         let hasGroups = !wrapped.isEmpty || tailRows > 0
@@ -148,6 +148,10 @@ public struct Dialog {
         if layout.height > maxRows { layout.blankAboveFirst = 0 }
         layout.messageRows = Array(wrapped.prefix(max(0, maxRows - layout.height + wrapped.count)))
         return layout
+    }
+
+    private func wrap(_ text: String, width: Int) -> [String] {
+        messageAlignment == .center ? Term.balancedWrap(text, width: width) : Term.wordWrap(text, width: width)
     }
 
     private func renderCentered(_ spans: [Span], in content: Rect, row: Int, buffer: inout Buffer) {

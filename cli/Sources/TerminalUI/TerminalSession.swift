@@ -84,6 +84,7 @@ public final class TerminalSession {
     }
 
     private var isClosed = false
+    private let input = KeyInput()
 
     public var width: Int {
         terminalDimensions().width
@@ -151,14 +152,16 @@ public final class TerminalSession {
     }
 
     public func readKey() -> TerminalKey {
-        guard !isClosed, let first = readByte() else { return .escape }
+        guard !isClosed, let first = input.readByte() else { return .escape }
 
         if let key = Self.key(forSimpleByte: first) { return key }
         return first == 0x1B ? readEscapeSequence() : decodeCharacter(firstByte: first)
     }
 
     public func readKey(timeoutMilliseconds: Int) -> TerminalKey? {
-        guard !isClosed, inputAvailable(milliseconds: Int32(clamping: timeoutMilliseconds)) else { return nil }
+        guard !isClosed else { return nil }
+        let milliseconds = Int32(clamping: timeoutMilliseconds)
+        guard input.wait(milliseconds: milliseconds) else { return nil }
         return readKey()
     }
 
@@ -188,13 +191,13 @@ public final class TerminalSession {
     }
 
     private func readEscapeSequence() -> TerminalKey {
-        guard inputAvailable(milliseconds: 24), let second = readByte() else {
+        guard input.available(milliseconds: 24), let second = input.readByte() else {
             return .escape
         }
         guard second == 0x5B || second == 0x4F else {
             return .escape
         }
-        guard inputAvailable(milliseconds: 24), let third = readByte() else {
+        guard input.available(milliseconds: 24), let third = input.readByte() else {
             return .escape
         }
 
@@ -206,7 +209,7 @@ public final class TerminalSession {
         case 0x48: return .home
         case 0x46: return .end
         case 0x31, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38:
-            guard inputAvailable(milliseconds: 24), let fourth = readByte(), fourth == 0x7E else {
+            guard input.available(milliseconds: 24), let fourth = input.readByte(), fourth == 0x7E else {
                 return .unknown
             }
             switch third {
@@ -234,7 +237,7 @@ public final class TerminalSession {
 
         var bytes = [firstByte]
         while bytes.count < expectedCount {
-            guard inputAvailable(milliseconds: 24), let byte = readByte() else {
+            guard input.available(milliseconds: 24), let byte = input.readByte() else {
                 return .unknown
             }
             bytes.append(byte)
@@ -244,21 +247,6 @@ public final class TerminalSession {
             return .unknown
         }
         return .character(character)
-    }
-
-    private func readByte() -> UInt8? {
-        var byte: UInt8 = 0
-        while true {
-            let result = Darwin.read(STDIN_FILENO, &byte, 1)
-            if result == 1 { return byte }
-            if result == -1 && errno == EINTR { continue }
-            return nil
-        }
-    }
-
-    private func inputAvailable(milliseconds: Int32) -> Bool {
-        var descriptor = pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0)
-        return poll(&descriptor, 1, milliseconds) > 0
     }
 
     private func terminalDimensions() -> (width: Int, height: Int) {

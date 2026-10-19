@@ -13,7 +13,7 @@ struct Clean: ParsableCommand {
           puremac clean ai          AI-tool caches & logs only
           puremac clean trash       Empty user + mounted-volume Trash
 
-        Interactive review starts with every item unselected. Finishing the selector only opens an exact deletion review; a separate confirmation defaults to No. --plain uses a numbered selector with ranges, all, and none. --force removes the scanner's standard preselection without either prompt. --dry-run and --json never delete or open a selector.
+        Interactive review starts with every item unselected. \(Render.reviewHelp) --force removes the scanner's standard preselection without either prompt. --dry-run and --json never delete or open a selector.
         """
     )
 

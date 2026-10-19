@@ -36,7 +36,7 @@ struct PreferencesScreen {
     }
 
     private static func ageValue(_ days: Int) -> String {
-        "‹ \(CleanupFlow.counted(days, "day")) ›"
+        "‹ \(Render.counted(days, "day")) ›"
     }
 
     mutating func reload() {
@@ -148,8 +148,8 @@ struct PreferencesScreen {
     private func listLines(width: Int) -> [[Span]] {
         let rows: [(row: Row, label: String, value: String)] = [
             (.age, Self.ageLabel, Self.ageValue(days)),
-            (.projectFolders, Self.foldersLabel, "\(CleanupFlow.counted(folderCount, "folder")) ›"),
-            (.protectedPaths, Self.pathsLabel, "\(CleanupFlow.counted(pathCount, "path")) ›"),
+            (.projectFolders, Self.foldersLabel, "\(Render.counted(folderCount, "folder")) ›"),
+            (.protectedPaths, Self.pathsLabel, "\(Render.counted(pathCount, "path")) ›"),
         ]
         let valueWidth = rows.map { Term.displayWidth($0.value) }.reduce(Self.widestValue, max)
         let widestLabel = rows.map { Term.displayWidth($0.label) }.max() ?? 1

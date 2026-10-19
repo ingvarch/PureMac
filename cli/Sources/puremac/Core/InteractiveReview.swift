@@ -396,7 +396,7 @@ enum InteractiveReview {
         var message = [Span("\(ByteCount.human(total)) will be deleted")]
         if hidden > 0 { message.append(Span("\(hidden) hidden by search", TextStyle(dim: true))) }
         return Dialog(
-            title: "Remove \(CleanupFlow.counted(count, noun))?",
+            title: "Remove \(Render.counted(count, noun))?",
             titleStyle: StatusScreen.warningTitle,
             borderStyle: StatusScreen.warningBorder,
             message: message,

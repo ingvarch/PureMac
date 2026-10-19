@@ -33,7 +33,6 @@ struct Ignore: ParsableCommand {
 
     struct List: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show protected paths.")
-        static let sheetTitle = "Protected paths"
 
         func run() throws {
             let store = try IgnoreStore(fileURL: AppPaths.ignoreFile)
@@ -42,7 +41,7 @@ struct Ignore: ParsableCommand {
                 return
             }
             print(Term.bold("Protected paths:"))
-            for line in Self.sheet(roots: store.roots).plainLines(withHeader: false) { print(line) }
+            for root in store.roots.sorted() { print("  " + Render.shorten(root)) }
         }
 
         static func emptyHint() -> [Span] {
@@ -51,11 +50,6 @@ struct Ignore: ParsableCommand {
                 Span("puremac ignore add <path>", TextStyle(color: .cyan)),
                 Span("`.", TextStyle(dim: true)),
             ]
-        }
-
-        static func sheet(roots: [String]) -> InfoSheet {
-            let rows: [InfoRow] = roots.sorted().map { .path(Render.shorten($0)) }
-            return InfoSheet(title: sheetTitle, subtitle: nil, sections: [InfoSection(title: nil, rows: rows)], footnote: nil)
         }
     }
 }

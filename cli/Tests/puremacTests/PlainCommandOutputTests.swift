@@ -92,14 +92,4 @@ final class PreferencesSheetTests: XCTestCase {
             XCTAssertEqual(projects, [Span("\(dir.path)/projects")])
         }
     }
-
-    func testProtectedPathsSheetListsSortedPaths() {
-        let sheet = Ignore.List.sheet(roots: ["/tmp/b", "/tmp/a"])
-        XCTAssertEqual(sheet.title, "Protected paths")
-        XCTAssertNil(sheet.subtitle)
-        XCTAssertEqual(sheet.sections.count, 1)
-        XCTAssertEqual(sheet.sections[0].rows.count, 2)
-        guard case .path(let first) = sheet.sections[0].rows[0] else { return XCTFail("path row") }
-        XCTAssertEqual(first, "/tmp/a")
-    }
 }

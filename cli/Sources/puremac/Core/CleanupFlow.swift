@@ -45,7 +45,9 @@ enum CleanupFlow {
         let categories = session.runWithSpinner(
             progress: labels.initialStatus,
             render: { tick, status in
-                scanningScreen(status: status, tick: tick, width: session.width, height: session.height)
+                scanningScreen(
+                    status: status, tick: tick, isCancelling: scanCancelled, width: session.width, height: session.height
+                )
             },
             onKey: { key, cancel in
                 if cancelsScan(key) {
@@ -120,13 +122,13 @@ enum CleanupFlow {
         }
     }
 
-    static func scanningScreen(status: ScanStatus, tick: Int, width: Int, height: Int) -> Buffer {
+    static func scanningScreen(status: ScanStatus, tick: Int, isCancelling: Bool = false, width: Int, height: Int) -> Buffer {
         StatusScreen.render(
             title: "PureMac",
             rows: [
-                StatusRow(Spinner.frame(tick: tick) + " " + status.headline, truncatesInMiddle: true),
+                StatusRow(Spinner.frame(tick: tick) + " " + (isCancelling ? StatusScreen.cancellingText : status.headline), truncatesInMiddle: true),
                 StatusRow(status.folder.map(Render.shorten) ?? "", style: TextStyle(dim: true), truncatesInMiddle: true),
-                StatusRow("Found \(counted(status.foundCount, "item")) · \(ByteCount.human(status.foundBytes))")
+                StatusRow("Found \(Render.counted(status.foundCount, "item")) · \(ByteCount.human(status.foundBytes))")
             ],
             hint: StatusScreen.scanHint,
             width: width,
@@ -169,17 +171,13 @@ enum CleanupFlow {
         )
     }
 
-    static func counted(_ count: Int, _ noun: String) -> String {
-        "\(count) \(noun)\(count == 1 ? "" : "s")"
-    }
-
     static func removingDialog(noun: String, progress: RemovalProgress, tick: Int, area: Rect) -> Dialog {
         let rowWidth = min(removingMaxContentWidth, Dialog.maxContentWidth(in: area))
         let current = Term.truncate(
             Spinner.frame(tick: tick) + " " + Render.shorten(progress.path), to: rowWidth, middle: true
         )
         return Dialog(
-            title: "Removing \(counted(progress.count, noun))…",
+            title: "Removing \(Render.counted(progress.count, noun))…",
             titleStyle: StatusScreen.warningTitle,
             borderStyle: StatusScreen.warningBorder,
             message: [
