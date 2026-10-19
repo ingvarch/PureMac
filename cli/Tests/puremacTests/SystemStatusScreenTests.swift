@@ -107,7 +107,7 @@ final class SystemStatusScreenTests: XCTestCase {
     func testRowsSitOneColumnInsideTheFrameWithoutExtraIndent() {
         let lines = lines(width: 100, height: 30)
         XCTAssertTrue(lines[1].hasPrefix("│ Chip "), lines[1])
-        let gauge = lines.first { $0.contains("12.9 GB in use") }
+        let gauge = lines.first { $0.contains("12 GB in use") }
         XCTAssertTrue(gauge?.hasPrefix("│ █") == true, gauge ?? "")
     }
 
@@ -154,7 +154,7 @@ final class SystemStatusScreenTests: XCTestCase {
         let lines = lines(width: 100, height: 30)
         let text = lines.joined(separator: "\n")
         for fact in ["Chip", "Apple M4 Pro", "14 cores (10 performance, 4 efficiency)", "26.0.1 (25A354)", "Mac16,7", "2d 1h 1m",
-                     "12.9 GB in use of 17.2 GB", "Wired", "107.4 GB free of 536.9 GB", "Managed by macOS"] {
+                     "12 GB in use of 16 GB", "Wired", "107.4 GB free of 536.9 GB", "Managed by macOS"] {
             XCTAssertTrue(text.contains(fact), fact)
         }
         let footnote = lines.firstIndex { $0.contains(Optimize.statusFootnote) }

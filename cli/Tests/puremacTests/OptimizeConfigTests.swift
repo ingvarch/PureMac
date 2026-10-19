@@ -237,7 +237,7 @@ final class SystemStatusTests: XCTestCase {
         guard case .gauge(let fraction, let color, let text) = rows[0] else { return XCTFail("gauge first") }
         XCTAssertEqual(fraction, 0.75, accuracy: 0.0001)
         XCTAssertEqual(color, .yellow)
-        XCTAssertEqual(text, "\(ByteCount.human(12_000_000_000)) in use of \(ByteCount.human(16_000_000_000))")
+        XCTAssertEqual(text, "11.2 GB in use of 14.9 GB")
         guard case .metric("Pressure", let value, nil) = rows[1] else { return XCTFail("pressure second") }
         XCTAssertEqual(value, [Span("Warning", TextStyle(color: .yellow))])
         XCTAssertEqual(rows.dropFirst(2).compactMap { row -> String? in
@@ -289,20 +289,20 @@ private let goldenStatus: [String] = [
     "This Mac",
     "  Chip              Apple M4 Pro",
     "  Cores             14 cores (10 performance, 4 efficiency)",
-    "  Memory            25.8 GB",
+    "  Memory            24 GB",
     "  macOS             26.0.1 (25A354)",
     "  Model             Mac16,7",
     "  Uptime            2d 1h 1m",
     "",
     "Memory",
-    "  ███████████████░░░░░ 12.9 GB in use of 17.2 GB",
+    "  ███████████████░░░░░ 12 GB in use of 16 GB",
     "  Pressure          Normal",
-    "  Installed         17.2 GB",
-    "  Free now          4.3 GB",
-    "  Active            2.1 GB",
-    "  Inactive          1.1 GB",
-    "  Compressed        536.9 MB",
-    "  Wired             3.2 GB",
+    "  Installed         16 GB",
+    "  Free now          4 GB",
+    "  Active            2 GB",
+    "  Inactive          1 GB",
+    "  Compressed        512 MB",
+    "  Wired             3 GB",
     "",
     "Storage",
     "  ████████████████░░░░ 107.4 GB free of 536.9 GB",
@@ -316,14 +316,14 @@ private let goldenStatus: [String] = [
 
 private let goldenRam: [String] = [
     "Memory",
-    "  ███████████████░░░░░ 12.9 GB in use of 17.2 GB",
+    "  ███████████████░░░░░ 12 GB in use of 16 GB",
     "  Pressure          Normal",
-    "  Installed         17.2 GB",
-    "  Free now          4.3 GB",
-    "  Active            2.1 GB",
-    "  Inactive          1.1 GB",
-    "  Compressed        536.9 MB",
-    "  Wired             3.2 GB",
+    "  Installed         16 GB",
+    "  Free now          4 GB",
+    "  Active            2 GB",
+    "  Inactive          1 GB",
+    "  Compressed        512 MB",
+    "  Wired             3 GB",
     "",
     "No memory was purged. macOS reclaims inactive memory when applications need it.",
 ]

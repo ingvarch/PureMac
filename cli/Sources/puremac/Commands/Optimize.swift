@@ -95,7 +95,7 @@ struct Optimize: ParsableCommand {
         let facts: [(String, String?)] = [
             ("Chip", machine.chip),
             ("Cores", machine.cores),
-            ("Memory", machine.memory.map(ByteCount.human)),
+            ("Memory", machine.memory.map(ByteCount.memory)),
             ("macOS", machine.macOS),
             ("Model", machine.model),
             ("Uptime", formatUptime(machine.uptime)),
@@ -104,24 +104,24 @@ struct Optimize: ParsableCommand {
     }
 
     static func memorySection(_ status: MemoryStatus, pressure: MemoryPressure?) -> InfoSection {
-        let used = ByteCount.human(status.total - status.free)
+        let used = ByteCount.memory(status.total - status.free)
         var rows: [InfoRow] = [
             .gauge(
                 fraction: status.usedFraction,
                 color: pressure?.color,
-                text: "\(used) in use of \(ByteCount.human(status.total))"
+                text: "\(used) in use of \(ByteCount.memory(status.total))"
             )
         ]
         if let pressure {
             rows.append(.metric(label: "Pressure", value: [Span(pressure.label, TextStyle(color: pressure.color))], note: nil))
         }
         rows += [
-            metric("Installed", ByteCount.human(status.total)),
-            metric("Free now", ByteCount.human(status.free)),
-            metric("Active", ByteCount.human(status.active)),
-            metric("Inactive", ByteCount.human(status.inactive)),
-            metric("Compressed", ByteCount.human(status.compressed)),
-            metric("Wired", ByteCount.human(status.wired)),
+            metric("Installed", ByteCount.memory(status.total)),
+            metric("Free now", ByteCount.memory(status.free)),
+            metric("Active", ByteCount.memory(status.active)),
+            metric("Inactive", ByteCount.memory(status.inactive)),
+            metric("Compressed", ByteCount.memory(status.compressed)),
+            metric("Wired", ByteCount.memory(status.wired)),
         ]
         return InfoSection(title: memoryTitle, rows: rows)
     }
