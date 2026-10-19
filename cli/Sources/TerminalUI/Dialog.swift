@@ -11,6 +11,8 @@ public struct DialogButton: Equatable {
 }
 
 public struct Dialog {
+    public enum MessageAlignment: Equatable { case center, leading }
+
     public var title: String
     public var titleStyle: TextStyle
     public var borderStyle: TextStyle
@@ -18,6 +20,7 @@ public struct Dialog {
     public var buttons: [DialogButton]
     public var focusedButton: Int?
     public var hints: KeyHints?
+    public var messageAlignment: MessageAlignment
 
     public init(
         title: String,
@@ -26,7 +29,8 @@ public struct Dialog {
         message: [Span] = [],
         buttons: [DialogButton] = [],
         focusedButton: Int? = nil,
-        hints: KeyHints? = nil
+        hints: KeyHints? = nil,
+        messageAlignment: MessageAlignment = .center
     ) {
         self.title = title
         self.titleStyle = titleStyle
@@ -35,10 +39,13 @@ public struct Dialog {
         self.buttons = buttons
         self.focusedButton = focusedButton
         self.hints = hints
+        self.messageAlignment = messageAlignment
     }
 
+    private static let sidePadding = 1
+
     public static func maxContentWidth(in area: Rect) -> Int {
-        max(1, area.width - 8)
+        max(1, area.width - 8 - 2 * Dialog.sidePadding)
     }
 
     public func frame(in area: Rect) -> Rect {
@@ -48,11 +55,12 @@ public struct Dialog {
     public func render(in area: Rect, buffer: inout Buffer) {
         let (frame, layout) = placement(in: area)
         buffer.clear(frame)
-        let content = Window(title: title, borderStyle: borderStyle, titleStyle: titleStyle)
+        let inner = Window(title: title, borderStyle: borderStyle, titleStyle: titleStyle)
             .render(in: frame, buffer: &buffer)
+        let content = Rect(x: inner.x + Dialog.sidePadding, y: inner.y, width: max(0, inner.width - 2 * Dialog.sidePadding), height: inner.height)
         var row = content.y + layout.blankAboveMessage
         for message in layout.messageRows {
-            renderCentered([message], in: content, row: row, buffer: &buffer)
+            renderMessage(message, in: content, row: row, buffer: &buffer)
             row += 1
         }
         row += layout.blankBelowMessage
@@ -72,17 +80,18 @@ public struct Dialog {
         var blankAboveMessage = 0
         var blankBelowMessage = 0
         var blankBelowButtons = 0
+        var blankBelowLast = 0
         var hintRows: Int
         var buttonRows: Int
         var height: Int {
-            messageRows.count + blankAboveMessage + blankBelowMessage + blankBelowButtons + buttonRows + hintRows
+            messageRows.count + blankAboveMessage + blankBelowMessage + blankBelowButtons + blankBelowLast + buttonRows + hintRows
         }
     }
 
     private func placement(in area: Rect) -> (frame: Rect, layout: Layout) {
         let contentWidth = self.contentWidth(maxWidth: Dialog.maxContentWidth(in: area))
         let layout = layout(contentWidth: contentWidth, maxRows: area.height - 4)
-        let width = contentWidth + 4
+        let width = contentWidth + 4 + 2 * Dialog.sidePadding
         let height = layout.height + 2
         let frame = Rect(
             x: area.x + (area.width - width) / 2,
@@ -126,6 +135,8 @@ public struct Dialog {
             layout.blankBelowMessage = tailRows > 0 ? 1 : 0
         }
         layout.blankBelowButtons = buttonRows > 0 && hintRows > 0 ? 1 : 0
+        layout.blankBelowLast = wrapped.isEmpty && tailRows == 0 ? 0 : 1
+        if layout.height > maxRows { layout.blankBelowLast = 0 }
         if layout.height > maxRows { layout.blankBelowButtons = 0 }
         if layout.height > maxRows { layout.blankBelowMessage = 0 }
         if layout.height > maxRows { layout.blankAboveMessage = 0 }
@@ -137,6 +148,15 @@ public struct Dialog {
         let width = Term.displayWidth(spans)
         let column = content.x + max(0, content.width - width) / 2
         buffer.write(spans, x: column, y: row, maxWidth: content.x + content.width - column)
+    }
+
+    private func renderMessage(_ span: Span, in content: Rect, row: Int, buffer: inout Buffer) {
+        switch messageAlignment {
+        case .center:
+            renderCentered([span], in: content, row: row, buffer: &buffer)
+        case .leading:
+            buffer.write([span], x: content.x, y: row, maxWidth: content.width)
+        }
     }
 
     private func renderButtons(in content: Rect, row: Int, buffer: inout Buffer) {

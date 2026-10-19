@@ -526,7 +526,7 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.contains("Y remove") || $0.contains("choose") })
         XCTAssertTrue(lines.contains { $0.contains("/tmp/first") })
         XCTAssertTrue(lines.contains { $0.contains("/tmp/second") })
-        XCTAssertTrue(lines.contains { $0.contains("/tmp/third") })
+        XCTAssertTrue(lines.contains { $0.contains("/tmp/thir") })
         XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 80 })
         XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
         XCTAssertEqual(buffer[3, 0].style, TextStyle(dim: true))

@@ -22,34 +22,35 @@ final class DialogTests: XCTestCase {
     }
 
     func testMaxContentWidthLeavesTheMarginAroundTheFrame() {
-        XCTAssertEqual(Dialog.maxContentWidth(in: Rect(x: 0, y: 0, width: 80, height: 24)), 72)
+        XCTAssertEqual(Dialog.maxContentWidth(in: Rect(x: 0, y: 0, width: 80, height: 24)), 70)
         XCTAssertEqual(Dialog.maxContentWidth(in: Rect(x: 0, y: 0, width: 4, height: 24)), 1)
     }
 
     func testFrameIsCenteredAndSizedToContent() {
         let dialog = simple()
-        XCTAssertEqual(dialog.frame(in: area), Rect(x: 15, y: 3, width: 10, height: 6))
+        XCTAssertEqual(dialog.frame(in: area), Rect(x: 14, y: 2, width: 12, height: 7))
         XCTAssertEqual(render(dialog, in: area).rows, [
-            "╭─ Hi ───╮",
-            "│        │",
-            "│ Hello  │",
-            "│        │",
-            "│ [ OK ] │",
-            "╰────────╯"
+            "╭─ Hi ─────╮",
+            "│          │",
+            "│  Hello   │",
+            "│          │",
+            "│  [ OK ]  │",
+            "│          │",
+            "╰──────────╯"
         ])
     }
 
     func testFrameIsCenteredInOffsetArea() {
         let frame = simple().frame(in: Rect(x: 10, y: 2, width: 40, height: 12))
-        XCTAssertEqual(frame, Rect(x: 25, y: 5, width: 10, height: 6))
+        XCTAssertEqual(frame, Rect(x: 24, y: 4, width: 12, height: 7))
     }
 
     func testContentWidthIsWidestOfMessageButtonsAndHints() {
         let wideButtons = simple(buttons: [DialogButton("Cancel"), DialogButton("Remove")])
-        XCTAssertEqual(wideButtons.frame(in: area).width, 22 + 4)
+        XCTAssertEqual(wideButtons.frame(in: area).width, 22 + 6)
         var withHints = simple()
         withHints.hints = KeyHints([KeyHint("Esc", "back"), KeyHint("Enter", "select")])
-        XCTAssertEqual(withHints.frame(in: area).width, Term.displayWidth("Esc back  Enter select") + 4)
+        XCTAssertEqual(withHints.frame(in: area).width, Term.displayWidth("Esc back  Enter select") + 6)
     }
 
     func testWidthIsCappedToMarginsAndMessageWraps() {
@@ -67,16 +68,16 @@ final class DialogTests: XCTestCase {
             message: [Span("aaa bbb ccc ddd"), Span("ee")],
             buttons: []
         )
-        let result = render(dialog, in: Rect(x: 0, y: 0, width: 16, height: 12))
-        XCTAssertEqual(result.frame.width, 12)
-        XCTAssertEqual(Array(result.rows[2...4]), ["│ aaa bbb  │", "│ ccc ddd  │", "│    ee    │"])
+        let result = render(dialog, in: Rect(x: 0, y: 0, width: 20, height: 12))
+        XCTAssertEqual(result.frame.width, 16)
+        XCTAssertEqual(Array(result.rows[2...4]), ["│   aaa bbb    │", "│   ccc ddd    │", "│      ee      │"])
     }
 
     func testLongWordIsHardBrokenByDisplayWidth() {
         let dialog = Dialog(title: "T", message: [Span("abcdefghij 界界界")], buttons: [])
-        let result = render(dialog, in: Rect(x: 0, y: 0, width: 13, height: 12))
+        let result = render(dialog, in: Rect(x: 0, y: 0, width: 15, height: 12))
         let rows = result.buffer.plainLines().dropFirst(result.frame.y + 2).prefix(4).map { String($0.dropFirst(2).dropLast(2)) }
-        XCTAssertEqual(rows, ["│ abcde │", "│ fghij │", "│ 界界  │", "│  界   │"])
+        XCTAssertEqual(rows, ["│  abcde  │", "│  fghij  │", "│  界界   │", "│   界    │"])
     }
 
     func testDropsBlankRowFirstWhenHeightIsShort() {
@@ -115,15 +116,15 @@ final class DialogTests: XCTestCase {
 
     func testButtonsAreTwoSpacesApart() {
         let result = render(simple(buttons: both), in: area)
-        XCTAssertEqual(result.rows[4], "│ [ Cancel ]  [ Remove ] │")
+        XCTAssertEqual(result.rows[4], "│  [ Cancel ]  [ Remove ]  │")
     }
 
     func testFocusedButtonIsWrittenWithPointersAtTheSameWidth() {
         var dialog = simple(buttons: both)
         dialog.focusedButton = 0
-        XCTAssertEqual(render(dialog, in: area).rows[4], "│ › Cancel ‹  [ Remove ] │")
+        XCTAssertEqual(render(dialog, in: area).rows[4], "│  › Cancel ‹  [ Remove ]  │")
         dialog.focusedButton = 1
-        XCTAssertEqual(render(dialog, in: area).rows[4], "│ [ Cancel ]  › Remove ‹ │")
+        XCTAssertEqual(render(dialog, in: area).rows[4], "│  [ Cancel ]  › Remove ‹  │")
     }
 
     func testFocusedNormalButtonIsInverse() {
@@ -153,14 +154,15 @@ final class DialogTests: XCTestCase {
         var dialog = simple()
         dialog.hints = KeyHints([KeyHint("Esc", "back")])
         XCTAssertEqual(render(dialog, in: area).rows, [
-            "╭─ Hi ─────╮",
-            "│          │",
-            "│  Hello   │",
-            "│          │",
-            "│  [ OK ]  │",
-            "│          │",
-            "│ Esc back │",
-            "╰──────────╯"
+            "╭─ Hi ───────╮",
+            "│            │",
+            "│   Hello    │",
+            "│            │",
+            "│   [ OK ]   │",
+            "│            │",
+            "│  Esc back  │",
+            "│            │",
+            "╰────────────╯"
         ])
     }
 
@@ -168,12 +170,13 @@ final class DialogTests: XCTestCase {
         var dialog = Dialog(title: "Hi", message: [Span("Hello, world!")])
         dialog.hints = KeyHints([KeyHint("Esc", "back")])
         XCTAssertEqual(render(dialog, in: area).rows, [
-            "╭─ Hi ──────────╮",
-            "│               │",
-            "│ Hello, world! │",
-            "│               │",
-            "│   Esc back    │",
-            "╰───────────────╯"
+            "╭─ Hi ────────────╮",
+            "│                 │",
+            "│  Hello, world!  │",
+            "│                 │",
+            "│    Esc back     │",
+            "│                 │",
+            "╰─────────────────╯"
         ])
     }
 
@@ -182,11 +185,12 @@ final class DialogTests: XCTestCase {
         dialog.hints = KeyHints([
             KeyHint("Enter", "select"), KeyHint("Esc", "back"), KeyHint("Tab", "next"), KeyHint("Space", "toggle")
         ])
-        let rows = render(dialog, in: Rect(x: 0, y: 0, width: 40, height: 14)).rows
-        XCTAssertEqual(Array(rows.suffix(3)), [
-            "│ Enter select  Esc back  Tab next │",
-            "│           Space toggle           │",
-            "╰──────────────────────────────────╯"
+        let rows = render(dialog, in: Rect(x: 0, y: 0, width: 42, height: 14)).rows
+        XCTAssertEqual(Array(rows.suffix(4)), [
+            "│  Enter select  Esc back  Tab next  │",
+            "│            Space toggle            │",
+            "│" + String(repeating: " ", count: 36) + "│",
+            "╰" + String(repeating: "─", count: 36) + "╯"
         ])
     }
 
@@ -194,48 +198,89 @@ final class DialogTests: XCTestCase {
         var messageAndHints = Dialog(title: "T", message: [Span("Hello")])
         messageAndHints.hints = KeyHints([KeyHint("Esc", "back")])
         XCTAssertEqual(render(messageAndHints, in: area).rows, [
-            "╭─ T ──────╮",
-            "│          │",
-            "│  Hello   │",
-            "│          │",
-            "│ Esc back │",
-            "╰──────────╯"
+            "╭─ T ────────╮",
+            "│            │",
+            "│   Hello    │",
+            "│            │",
+            "│  Esc back  │",
+            "│            │",
+            "╰────────────╯"
         ])
         XCTAssertEqual(render(Dialog(title: "Title", buttons: [DialogButton("OK")]), in: area).rows, [
-            "╭─ Title ─╮",
-            "│ [ OK ]  │",
-            "╰─────────╯"
+            "╭─ Title ───╮",
+            "│  [ OK ]   │",
+            "│           │",
+            "╰───────────╯"
         ])
         var buttonsAndHints = Dialog(title: "T", buttons: [DialogButton("OK")])
         buttonsAndHints.hints = KeyHints([KeyHint("Esc", "back")])
         XCTAssertEqual(render(buttonsAndHints, in: area).rows, [
-            "╭─ T ──────╮",
-            "│  [ OK ]  │",
-            "│          │",
-            "│ Esc back │",
-            "╰──────────╯"
+            "╭─ T ────────╮",
+            "│   [ OK ]   │",
+            "│            │",
+            "│  Esc back  │",
+            "│            │",
+            "╰────────────╯"
         ])
     }
 
     func testDropsBlankRowsBottomUpBeforeAnyMessageRow() {
         var dialog = Dialog(title: "T", message: (1...4).map { Span("line \($0)") }, buttons: [DialogButton("OK")])
         dialog.hints = KeyHints([KeyHint("Esc", "back")])
-        let oneDropped = render(dialog, in: area).rows
-        XCTAssertEqual(oneDropped.count, 10)
-        XCTAssertTrue(oneDropped[1].allSatisfy { $0 == " " || $0 == "│" })
-        XCTAssertTrue(oneDropped[2].contains("line 1"))
-        XCTAssertTrue(oneDropped[5].contains("line 4"))
-        XCTAssertTrue(oneDropped[6].allSatisfy { $0 == " " || $0 == "│" })
-        XCTAssertTrue(oneDropped[7].contains("[ OK ]"))
-        XCTAssertTrue(oneDropped[8].contains("Esc back"))
+        let droppedTwoBlankRows = render(dialog, in: area).rows
+        XCTAssertEqual(droppedTwoBlankRows.count, 10)
+        XCTAssertTrue(droppedTwoBlankRows[1].allSatisfy { $0 == " " || $0 == "│" })
+        XCTAssertTrue(droppedTwoBlankRows[2].contains("line 1"))
+        XCTAssertTrue(droppedTwoBlankRows[5].contains("line 4"))
+        XCTAssertTrue(droppedTwoBlankRows[6].allSatisfy { $0 == " " || $0 == "│" })
+        XCTAssertTrue(droppedTwoBlankRows[7].contains("[ OK ]"))
+        XCTAssertTrue(droppedTwoBlankRows[8].contains("Esc back"))
 
         dialog.message = (1...5).map { Span("line \($0)") }
-        let twoDropped = render(dialog, in: area).rows
-        XCTAssertEqual(twoDropped.count, 10)
-        XCTAssertTrue(twoDropped[1].allSatisfy { $0 == " " || $0 == "│" })
-        XCTAssertTrue(twoDropped[6].contains("line 5"))
-        XCTAssertTrue(twoDropped[7].contains("[ OK ]"))
-        XCTAssertTrue(twoDropped[8].contains("Esc back"))
+        let droppedThreeBlankRows = render(dialog, in: area).rows
+        XCTAssertEqual(droppedThreeBlankRows.count, 10)
+        XCTAssertTrue(droppedThreeBlankRows[1].allSatisfy { $0 == " " || $0 == "│" })
+        XCTAssertTrue(droppedThreeBlankRows[6].contains("line 5"))
+        XCTAssertTrue(droppedThreeBlankRows[7].contains("[ OK ]"))
+        XCTAssertTrue(droppedThreeBlankRows[8].contains("Esc back"))
+    }
+
+    func testBottomBlankRowIsDroppedBeforeTheOtherBlankRows() {
+        var dialog = Dialog(title: "T", message: [Span("a"), Span("b")], buttons: [DialogButton("OK")])
+        dialog.hints = KeyHints([KeyHint("Esc", "back")])
+        let fits = render(dialog, in: Rect(x: 0, y: 0, width: 40, height: 12))
+        XCTAssertEqual(fits.rows.count, 10)
+        XCTAssertTrue(fits.rows[8].allSatisfy { $0 == " " || $0 == "│" })
+        let tight = render(dialog, in: Rect(x: 0, y: 0, width: 40, height: 11)).rows
+        XCTAssertEqual(tight.count, 9)
+        XCTAssertTrue(tight[1].allSatisfy { $0 == " " || $0 == "│" })
+        XCTAssertTrue(tight[4].allSatisfy { $0 == " " || $0 == "│" })
+        XCTAssertTrue(tight[6].allSatisfy { $0 == " " || $0 == "│" })
+        XCTAssertTrue(tight[7].contains("Esc back"))
+    }
+
+    func testLeadingMessageAlignmentKeepsRowsInTheFirstContentColumn() {
+        var dialog = Dialog(
+            title: "T",
+            message: [Span("a"), Span("longer text")],
+            buttons: [DialogButton("OK")]
+        )
+        dialog.messageAlignment = .leading
+        XCTAssertEqual(render(dialog, in: area).rows, [
+            "╭─ T ───────────╮",
+            "│               │",
+            "│  a            │",
+            "│  longer text  │",
+            "│               │",
+            "│    [ OK ]     │",
+            "│               │",
+            "╰───────────────╯"
+        ])
+    }
+
+    func testCenterMessageAlignmentIsTheDefault() {
+        let dialog = Dialog(title: "T", message: [Span("a"), Span("longer text")])
+        XCTAssertEqual(render(dialog, in: area).rows[2], "│       a       │")
     }
 
     func testBorderAndTitleStylesApply() {
@@ -252,8 +297,8 @@ final class DialogTests: XCTestCase {
     func testRenderClearsBackgroundInsideFrameOnly() {
         let result = render(simple(), in: area, fill: "x")
         let lines = result.buffer.plainLines()
-        XCTAssertEqual(lines[2], String(repeating: "x", count: 40))
-        XCTAssertEqual(lines[5], String(repeating: "x", count: 15) + "│ Hello  │" + String(repeating: "x", count: 15))
+        XCTAssertEqual(lines[1], String(repeating: "x", count: 40))
+        XCTAssertEqual(lines[4], String(repeating: "x", count: 14) + "│  Hello   │" + String(repeating: "x", count: 14))
         XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
         XCTAssertTrue(result.buffer.lines(colors: true).allSatisfy { Term.displayWidth($0) == 40 })
     }
@@ -266,28 +311,30 @@ final class DialogTests: XCTestCase {
         XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
     }
 
-    func testStatusDialogWithoutButtonsOrHintsHasBlankRowAboveMessageOnly() {
+    func testStatusDialogWithoutButtonsOrHintsHasBlankRowsAroundMessage() {
         let dialog = Dialog(title: "Working", message: [Span("Removing 2 items…")])
         XCTAssertEqual(render(dialog, in: area).rows, [
-            "╭─ Working ─────────╮",
-            "│                   │",
-            "│ Removing 2 items… │",
-            "╰───────────────────╯"
+            "╭─ Working ───────────╮",
+            "│                     │",
+            "│  Removing 2 items…  │",
+            "│                     │",
+            "╰─────────────────────╯"
         ])
     }
 
     func testContentWidthFitsTitle() {
         let shortMessage = Dialog(title: "Cleanup complete", message: [Span("1 KB removed")])
         XCTAssertEqual(render(shortMessage, in: area).rows, [
-            "╭─ Cleanup complete ─╮",
-            "│                    │",
-            "│    1 KB removed    │",
-            "╰────────────────────╯"
+            "╭─ Cleanup complete ───╮",
+            "│                      │",
+            "│     1 KB removed     │",
+            "│                      │",
+            "╰──────────────────────╯"
         ])
         let titleOnly = Dialog(title: "Removing 2 items…")
         XCTAssertEqual(render(titleOnly, in: area).rows, [
-            "╭─ Removing 2 items… ─╮",
-            "╰─────────────────────╯"
+            "╭─ Removing 2 items… ───╮",
+            "╰───────────────────────╯"
         ])
     }
 }

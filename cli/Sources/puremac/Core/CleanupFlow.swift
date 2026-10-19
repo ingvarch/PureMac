@@ -149,7 +149,8 @@ enum CleanupFlow {
             message: [
                 Span(Term.pad(current, to: rowWidth)),
                 Span("\(progress.position) of \(progress.count)", TextStyle(dim: true))
-            ]
+            ],
+            messageAlignment: .leading
         )
     }
 

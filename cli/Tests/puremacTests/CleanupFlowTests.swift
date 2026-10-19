@@ -78,6 +78,21 @@ final class CleanupFlowTests: XCTestCase {
         XCTAssertEqual(dialog.message.count, 2)
     }
 
+    func testRemovingDialogKeepsRowsInTheFirstContentColumn() {
+        let area = Rect(x: 0, y: 0, width: 80, height: 24)
+        let dialog = CleanupFlow.removingDialog(noun: "item", progress: progress(), tick: 0, area: area)
+        var buffer = Buffer(width: 80, height: 24)
+        dialog.render(in: area, buffer: &buffer)
+        let frame = dialog.frame(in: area)
+        let lines = buffer.plainLines()
+        let spinnerRow = lines.first { $0.contains("⠋ /tmp/second") }!
+        let countRow = lines.first { $0.contains("2 of 2") }!
+        let spinnerColumn = spinnerRow.distance(from: spinnerRow.startIndex, to: spinnerRow.range(of: "⠋")!.lowerBound)
+        let countColumn = countRow.distance(from: countRow.startIndex, to: countRow.range(of: "2 of 2")!.lowerBound)
+        XCTAssertEqual(spinnerColumn, frame.x + 3)
+        XCTAssertEqual(countColumn, frame.x + 3)
+    }
+
     func testRemovingDialogKeepsFixedWidthAcrossItems() {
         let wide = Rect(x: 0, y: 0, width: 120, height: 24)
         let short = RemovalProgress(index: 0, count: 2, path: "/tmp/a")
@@ -85,11 +100,11 @@ final class CleanupFlowTests: XCTestCase {
         let shortDialog = CleanupFlow.removingDialog(noun: "item", progress: short, tick: 0, area: wide)
         let longDialog = CleanupFlow.removingDialog(noun: "item", progress: long, tick: 5, area: wide)
         XCTAssertEqual(shortDialog.frame(in: wide), longDialog.frame(in: wide))
-        XCTAssertEqual(shortDialog.frame(in: wide).width, 60 + 4)
+        XCTAssertEqual(shortDialog.frame(in: wide).width, 60 + 6)
         let narrow = Rect(x: 0, y: 0, width: 40, height: 12)
         XCTAssertEqual(
             CleanupFlow.removingDialog(noun: "item", progress: short, tick: 0, area: narrow).frame(in: narrow).width,
-            Dialog.maxContentWidth(in: narrow) + 4
+            Dialog.maxContentWidth(in: narrow) + 6
         )
     }
 
