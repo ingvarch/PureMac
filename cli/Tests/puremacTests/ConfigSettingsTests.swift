@@ -276,4 +276,19 @@ final class ConfigSettingsTests: XCTestCase {
             XCTAssertTrue(changed.contains("8 days  saved"), changed)
         }
     }
+
+    func testSavedFileKeepsSlashesUnescaped() throws {
+        var store = try ConfigStore(fileURL: file)
+        try store.setProjectRoots(["/Users/me/Projects"])
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(text.contains("\"/Users/me/Projects\""), text)
+        XCTAssertFalse(text.contains("\\/"), text)
+        XCTAssertEqual(try ConfigStore(fileURL: file).projectRoots, ["/Users/me/Projects"])
+    }
+
+    func testDefaultFileKeepsSlashesUnescaped() throws {
+        let text = String(decoding: try ConfigStore.defaultFileData(), as: UTF8.self)
+        XCTAssertTrue(text.contains("\"\(Safety.home)/Projects\""), text)
+        XCTAssertFalse(text.contains("\\/"), text)
+    }
 }

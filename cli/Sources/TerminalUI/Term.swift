@@ -123,7 +123,7 @@ public enum Term {
         return output
     }
 
-    private static func suffix(_ string: String, width: Int) -> String {
+    static func suffix(_ string: String, width: Int) -> String {
         var characters: [Character] = []
         var used = 0
         for character in string.reversed() {

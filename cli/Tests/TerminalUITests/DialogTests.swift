@@ -208,18 +208,37 @@ final class DialogTests: XCTestCase {
         ])
         XCTAssertEqual(render(Dialog(title: "Title", buttons: [DialogButton("OK")]), in: area).rows, [
             "╭─ Title ───╮",
+            "│           │",
             "│  [ OK ]   │",
             "│           │",
             "╰───────────╯"
         ])
-        var buttonsAndHints = Dialog(title: "T", buttons: [DialogButton("OK")])
-        buttonsAndHints.hints = KeyHints([KeyHint("Esc", "back")])
-        XCTAssertEqual(render(buttonsAndHints, in: area).rows, [
+    }
+
+    func testDialogWithoutMessageHasABlankRowAboveItsFirstGroup() {
+        var dialog = Dialog(title: "T", buttons: [DialogButton("OK")])
+        dialog.hints = KeyHints([KeyHint("Esc", "back")])
+        XCTAssertEqual(render(dialog, in: area).rows, [
             "╭─ T ────────╮",
+            "│            │",
             "│   [ OK ]   │",
             "│            │",
             "│  Esc back  │",
             "│            │",
+            "╰────────────╯"
+        ])
+        XCTAssertEqual(render(dialog, in: Rect(x: 0, y: 0, width: 40, height: 8)).rows, [
+            "╭─ T ────────╮",
+            "│            │",
+            "│   [ OK ]   │",
+            "│            │",
+            "│  Esc back  │",
+            "╰────────────╯"
+        ])
+        XCTAssertEqual(render(dialog, in: Rect(x: 0, y: 0, width: 40, height: 6)).rows, [
+            "╭─ T ────────╮",
+            "│   [ OK ]   │",
+            "│  Esc back  │",
             "╰────────────╯"
         ])
     }
@@ -336,5 +355,26 @@ final class DialogTests: XCTestCase {
             "╭─ Removing 2 items… ───╮",
             "╰───────────────────────╯"
         ])
+    }
+
+    func testMaxTitleWidthLeavesRoomForTheBorderPadding() {
+        XCTAssertEqual(Dialog.maxTitleWidth(in: Rect(x: 0, y: 0, width: 80, height: 24)), 68)
+        XCTAssertEqual(Dialog.maxTitleWidth(in: Rect(x: 0, y: 0, width: 4, height: 24)), 1)
+    }
+
+    func testButtonsThatDoNotFitSideBySideStackOnePerRowCentered() throws {
+        let dialog = Dialog(
+            title: "Hi",
+            message: [Span("Sure?")],
+            buttons: [DialogButton("Cancel"), DialogButton("Remove protection", role: .destructive)]
+        )
+        let result = render(dialog, in: area)
+        let content = (x: 3, width: result.frame.width - 6)
+        let cancelRow = 4
+        for (offset, title) in ["[ Cancel ]", "[ Remove protection ]"].enumerated() {
+            let row = result.rows[cancelRow + offset]
+            let start = try XCTUnwrap(row.range(of: title), row).lowerBound
+            XCTAssertEqual(row.distance(from: row.startIndex, to: start), content.x + (content.width - title.count) / 2, row)
+        }
     }
 }

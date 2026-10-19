@@ -40,7 +40,7 @@ final class PlainCommandOutputTests: XCTestCase {
     }
 
     func testIgnoreListHintHasACyanCommandWhenColorsAreOn() {
-        let styled = Term.styled(Ignore.List.emptyHint(quoted: true), colors: true)
+        let styled = Term.styled(Ignore.List.emptyHint(), colors: true)
         XCTAssertTrue(styled.contains("\u{1B}[0m\u{1B}[36mpuremac ignore add <path>"), styled)
     }
 
@@ -100,20 +100,12 @@ final class PreferencesSheetTests: XCTestCase {
         XCTAssertEqual(first, "/tmp/a")
     }
 
-    func testProtectedPathsSheetWithoutPathsShowsTheHintWithACyanCommand() {
-        let sheet = Ignore.List.sheet(roots: [])
-        guard case .message(let spans) = sheet.sections[0].rows[0] else { return XCTFail("hint row") }
-        XCTAssertEqual(spans.map(\.text).joined(), "No protected paths. Add one with puremac ignore add <path>.")
-        XCTAssertEqual(spans.filter { $0.style.color == .cyan }.map(\.text), ["puremac ignore add <path>"])
-        XCTAssertEqual(sheet.sections[0].rows.count, 1)
-    }
-
-    func testHomeMenuOpensSheetsOnlyForStatusPreferencesAndProtectedPaths() throws {
+    func testHomeMenuOpensSheetsOnlyForStatusAndPreferences() throws {
         try withConfigHome { _ in
             for choice in 0...2 { XCTAssertNil(HomeMenu.sheet(forChoice: choice), "\(choice)") }
             XCTAssertEqual(HomeMenu.sheet(forChoice: 3)?.title, "Mac status")
             XCTAssertEqual(HomeMenu.sheet(forChoice: 4)?.title, "PureMac CLI settings")
-            XCTAssertEqual(HomeMenu.sheet(forChoice: 5)?.title, "Protected paths")
+            XCTAssertNil(HomeMenu.sheet(forChoice: 5))
             XCTAssertNil(HomeMenu.sheet(forChoice: 6))
         }
     }
@@ -122,13 +114,10 @@ final class PreferencesSheetTests: XCTestCase {
         try withConfigHome { dir in
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try Data("[]".utf8).write(to: AppPaths.configFile)
-            try Data("relative/path\n".utf8).write(to: AppPaths.ignoreFile)
-            for (choice, title) in [(4, "PureMac CLI settings"), (5, "Protected paths")] {
-                let sheet = try XCTUnwrap(HomeMenu.sheet(forChoice: choice))
-                XCTAssertEqual(sheet.title, title)
-                guard case .message(let spans) = sheet.sections[0].rows[0] else { return XCTFail("error row") }
-                XCTAssertEqual(spans.first?.style, TextStyle(color: .red))
-            }
+            let sheet = try XCTUnwrap(HomeMenu.sheet(forChoice: 4))
+            XCTAssertEqual(sheet.title, "PureMac CLI settings")
+            guard case .message(let spans) = sheet.sections[0].rows[0] else { return XCTFail("error row") }
+            XCTAssertEqual(spans.first?.style, TextStyle(color: .red))
         }
     }
 }

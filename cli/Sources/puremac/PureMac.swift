@@ -32,6 +32,7 @@ enum HomeMenu {
     static let title = "PureMac"
     static let subtitle = "Your Mac, with room to work.  /  \(puremacVersion)"
     static let exploreIndex = 2
+    static let protectedPathsIndex = 5
     static let options: [(title: String, detail: String)] = [
         ("Clean caches", "Choose tools and individual paths to remove"),
         ("Project cleanup", "Review dependencies and generated build artifacts"),
@@ -70,6 +71,10 @@ enum HomeMenu {
             case exploreIndex:
                 guard try ExploreConfirmation.ask() else { continue }
                 try Analyze.parse([]).run()
+            case protectedPathsIndex:
+                let session = try TerminalSession()
+                defer { session.close() }
+                PathListEditor.run(.protectedPaths, in: session)
             default: return
             }
         }
@@ -79,7 +84,6 @@ enum HomeMenu {
         switch choice {
         case 3: return InfoSheet.loading(title: Optimize.statusTitle, Optimize.currentStatusSheet)
         case 4: return InfoSheet.loading(title: Config.sheetTitle, Config.currentSheet)
-        case 5: return InfoSheet.loading(title: Ignore.List.sheetTitle, Ignore.List.currentSheet)
         default: return nil
         }
     }

@@ -10,6 +10,30 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertEqual(model.matchingAddresses.count, 3)
     }
 
+    func testEditQueryTypesFiltersAndDeletes() {
+        var model = InteractiveReviewModel(categories: fixtureCategories())
+        for key in [TerminalKey.character("s"), .character("e"), .character("c")] { model.editQuery(key) }
+        XCTAssertEqual(model.query, "sec")
+        XCTAssertEqual(model.matchingAddresses.count, 1)
+        model.editQuery(.backspace)
+        model.editQuery(.delete)
+        XCTAssertEqual(model.query, "s")
+        model.editQuery(.space)
+        XCTAssertEqual(model.query, "s ")
+    }
+
+    func testEditQueryIgnoresControlKeysAndKeepsFocusWhenNothingChanged() {
+        var model = InteractiveReviewModel(categories: fixtureCategories())
+        model.move(2)
+        model.status = "note"
+        model.editQuery(.backspace)
+        model.editQuery(.up)
+        model.editQuery(.character("\u{7F}"))
+        XCTAssertEqual(model.query, "")
+        XCTAssertEqual(model.focusedAddress, model.matchingAddresses[2])
+        XCTAssertEqual(model.status, "note")
+    }
+
     func testReviewSelectionAndSearchPreserveExactItems() {
         var model = InteractiveReviewModel(categories: fixtureCategories())
         model.toggleFocused()
@@ -112,6 +136,15 @@ final class InteractiveScreensTests: XCTestCase {
         model.updateQuery(String(repeating: "x", count: 30))
         let line = renderReview(model, width: 40, height: 12).plainLines()[1]
         XCTAssertFalse(line.contains("shown"))
+    }
+
+    func testReviewSearchFieldKeepsTheEndOfALongQueryNextToTheCursor() {
+        var model = InteractiveReviewModel(categories: fixtureCategories())
+        model.isSearching = true
+        model.updateQuery("abcdefghijklmnopqrstuvwxyz0123456789")
+        let buffer = renderReview(model, width: 40, height: 12)
+        XCTAssertEqual(buffer.plainLines()[1], "│ Search  …klmnopqrstuvwxyz0123456789  │")
+        XCTAssertEqual(buffer[37, 1].style, TextStyle(inverse: true))
     }
 
     func testReviewRowsShowCategoryGroupAndItemsWithFocus() {

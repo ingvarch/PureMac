@@ -253,7 +253,7 @@ struct ConfigStore {
     private static func encode(values: [String: String], roots: [String]?) throws -> Data {
         var object: [String: Any] = values
         if let roots { object[rootsKey] = roots }
-        return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 
     private func save(values: [String: String], roots: [String]?) throws {

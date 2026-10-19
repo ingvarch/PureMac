@@ -23,13 +23,14 @@ enum ReviewKeyRoute: Equatable {
 
 struct InteractiveReviewModel {
     var categories: [CategoryScan]
-    var query = ""
+    private(set) var queryInput = TextInput()
     var isSearching = false
     var status = ""
     var pathOffset = 0
     private(set) var focus = 0
     private(set) var confirmation: ConfirmationButton?
 
+    var query: String { queryInput.text }
     var isConfirming: Bool { confirmation != nil }
 
     init(categories: [CategoryScan]) {
@@ -137,10 +138,15 @@ struct InteractiveReviewModel {
     }
 
     mutating func updateQuery(_ value: String) {
-        query = value
+        queryInput = TextInput(value)
         focus = 0
         pathOffset = 0
         status = ""
+    }
+
+    mutating func editQuery(_ key: TerminalKey) {
+        var edited = queryInput
+        if edited.handle(key) { updateQuery(edited.text) }
     }
 
     mutating func beginConfirmation() -> Bool {
@@ -279,18 +285,8 @@ enum InteractiveReview {
                 case .escape:
                     model.isSearching = false
                     model.updateQuery("")
-                case .backspace, .delete:
-                    if !model.query.isEmpty {
-                        model.updateQuery(String(model.query.dropLast()))
-                    }
-                case .space:
-                    model.updateQuery(model.query + " ")
-                case .character(let character):
-                    if !character.isASCIIControl {
-                        model.updateQuery(model.query + String(character))
-                    }
                 default:
-                    break
+                    model.editQuery(key)
                 }
                 continue
             }
@@ -426,9 +422,7 @@ enum InteractiveReview {
         let found = "\(model.matchingAddresses.count) shown · \(ByteCount.human(model.allBytes))"
         let left: [Span]
         if model.isSearching {
-            let label = "Search  "
-            let query = Term.truncate(model.query, to: max(1, rect.width - label.count - 1))
-            left = [Span(label, TextStyle(color: .cyan)), Span(query), Span(" ", TextStyle(inverse: true))]
+            left = model.queryInput.fieldSpans(label: "Search  ", width: rect.width)
         } else if !model.status.isEmpty {
             left = [Span(Term.truncate(model.status, to: rect.width), TextStyle(color: .yellow))]
         } else if !model.query.isEmpty {
@@ -524,10 +518,6 @@ enum InteractiveReview {
 }
 
 private extension Character {
-    var isASCIIControl: Bool {
-        unicodeScalars.allSatisfy { $0.value < 0x20 || $0.value == 0x7F }
-    }
-
     var lowercasedString: String {
         String(self).lowercased()
     }

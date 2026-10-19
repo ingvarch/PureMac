@@ -38,31 +38,24 @@ struct Ignore: ParsableCommand {
         func run() throws {
             let store = try IgnoreStore(fileURL: AppPaths.ignoreFile)
             guard !store.roots.isEmpty else {
-                print(Term.styled(Self.emptyHint(quoted: true)))
+                print(Term.styled(Self.emptyHint()))
                 return
             }
             print(Term.bold("Protected paths:"))
             for line in Self.sheet(roots: store.roots).plainLines(withHeader: false) { print(line) }
         }
 
-        static func emptyHint(quoted: Bool) -> [Span] {
-            let quote = quoted ? "`" : ""
-            return [
-                Span("No protected paths. Add one with " + quote, TextStyle(dim: true)),
+        static func emptyHint() -> [Span] {
+            [
+                Span("No protected paths. Add one with `", TextStyle(dim: true)),
                 Span("puremac ignore add <path>", TextStyle(color: .cyan)),
-                Span(quote + ".", TextStyle(dim: true)),
+                Span("`.", TextStyle(dim: true)),
             ]
         }
 
         static func sheet(roots: [String]) -> InfoSheet {
-            let rows: [InfoRow] = roots.isEmpty
-                ? [.message(emptyHint(quoted: false))]
-                : roots.sorted().map { .path(Render.shorten($0)) }
+            let rows: [InfoRow] = roots.sorted().map { .path(Render.shorten($0)) }
             return InfoSheet(title: sheetTitle, subtitle: nil, sections: [InfoSection(title: nil, rows: rows)], footnote: nil)
-        }
-
-        static func currentSheet() throws -> InfoSheet {
-            sheet(roots: try IgnoreStore(fileURL: AppPaths.ignoreFile).roots)
         }
     }
 }
