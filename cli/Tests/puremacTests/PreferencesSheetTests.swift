@@ -3,19 +3,6 @@ import XCTest
 @testable import puremac
 import TerminalUI
 
-private func withConfigHome<T>(_ body: (URL) throws -> T) throws -> T {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("puremac-sheet-tests-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let saved = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
-    setenv("XDG_CONFIG_HOME", directory.path, 1)
-    defer {
-        if let saved { setenv("XDG_CONFIG_HOME", saved, 1) } else { unsetenv("XDG_CONFIG_HOME") }
-        try? FileManager.default.removeItem(at: directory)
-    }
-    return try body(directory.appendingPathComponent("puremac", isDirectory: true))
-}
-
 final class PlainCommandOutputTests: XCTestCase {
     func testConfigPrintsTodaysTextWithDefaultValue() throws {
         try withConfigHome { dir in
@@ -30,6 +17,8 @@ final class PlainCommandOutputTests: XCTestCase {
               Settings     \(dir.path)/config.json
               Protected    \(dir.path)/ignore
 
+            Project folders
+            \(Purger.defaultRoots.map { "  " + Render.shorten($0) + "\n" }.joined())
             """)
         }
     }
@@ -84,7 +73,7 @@ final class PreferencesSheetTests: XCTestCase {
             var sheet = Config.sheet(store: store)
             XCTAssertEqual(sheet.title, "PureMac CLI settings")
             XCTAssertEqual(sheet.subtitle, "Values used when a command-line option is omitted")
-            XCTAssertEqual(sheet.sections.map(\.title), [nil, "Files"])
+            XCTAssertEqual(sheet.sections.map(\.title), [nil, "Files", "Project folders"])
             guard case .metric("purge.older_than_days", let value, let note) = sheet.sections[0].rows[0] else { return XCTFail("key row") }
             XCTAssertEqual(value, [Span("7 days")])
             XCTAssertEqual(note, Span("default", dim))

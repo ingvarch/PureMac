@@ -56,12 +56,9 @@ struct Config: ParsableCommand {
     static let sheetTitle = "PureMac CLI settings"
 
     static func sheet(store: ConfigStore) -> InfoSheet {
-        let keys = ConfigStore.knownKeys.map { key -> InfoRow in
-            let saved = store.values[key]
-            let value = saved ?? ConfigStore.defaultValues[key] ?? ""
-            let note = saved == nil ? Span("default", TextStyle(dim: true)) : Span("saved", TextStyle(color: .cyan))
-            return .metric(label: key, value: [Span("\(value) days")], note: note)
-        }
+        let days = store.olderThanDays
+        let note = days == ConfigStore.defaultDays ? Span("default", TextStyle(dim: true)) : Span("saved", TextStyle(color: .cyan))
+        let keys = [InfoRow.metric(label: ConfigStore.daysKey, value: [Span("\(days) days")], note: note)]
         let files = [("Settings", AppPaths.configFile), ("Protected", AppPaths.ignoreFile)].map { label, url in
             InfoRow.metric(label: label, value: [Span(Render.shorten(url.path))], note: nil)
         }
@@ -71,6 +68,7 @@ struct Config: ParsableCommand {
             sections: [
                 InfoSection(title: nil, labelWidth: 26, rows: keys),
                 InfoSection(title: "Files", labelWidth: 12, rows: files),
+                InfoSection(title: "Project folders", rows: store.projectRoots.map { .path(Render.shorten($0)) }),
             ],
             footnote: nil
         )

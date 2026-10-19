@@ -36,3 +36,16 @@ extension InteractiveReviewModel {
         return model
     }
 }
+
+func withConfigHome<T>(_ body: (URL) throws -> T) throws -> T {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("puremac-config-home-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let saved = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
+    setenv("XDG_CONFIG_HOME", directory.path, 1)
+    defer {
+        if let saved { setenv("XDG_CONFIG_HOME", saved, 1) } else { unsetenv("XDG_CONFIG_HOME") }
+        try? FileManager.default.removeItem(at: directory)
+    }
+    return try body(directory.appendingPathComponent("puremac", isDirectory: true))
+}

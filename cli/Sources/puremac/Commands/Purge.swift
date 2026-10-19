@@ -6,16 +6,16 @@ struct Purge: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Find removable build artifacts inside project folders (node_modules, target, .venv, …).",
         discussion: """
-        With no path, scans ~/Projects, ~/Code, ~/dev, ~/GitHub, ~/Workspace.
+        With no path, scans the project folders from Preferences, by default ~/Projects, ~/Code, ~/dev, ~/GitHub, ~/Workspace.
         Interactive review starts empty so recent and older artifacts are both selectable.
-          puremac purge                 Scan the default project folders
+          puremac purge                 Scan the configured project folders
           puremac purge ~/Work/app      Scan a specific folder
 
         Finishing the selector only opens an exact deletion review; a separate confirmation defaults to No. --plain uses a numbered selector with ranges, all, and none. --force removes only artifacts older than the configured threshold without either prompt. --dry-run and --json never delete or open a selector.
         """
     )
 
-    @Argument(help: "Folder(s) to scan. Omit to scan the default project locations.")
+    @Argument(help: "Folder(s) to scan. Omit to scan the configured project folders.")
     var paths: [String] = []
 
     @Option(name: .customLong("older-than"), help: "Age threshold used by --force and read-only reports (default 7, or config).")
@@ -56,9 +56,11 @@ struct Purge: ParsableCommand {
 
         let ignore = try IgnoreStore(fileURL: AppPaths.ignoreFile)
         let days = try resolvedDays()
-        let roots = paths.isEmpty
-            ? Purger.defaultRoots
-            : paths.map { Safety.absolutePath($0) }
+        let roots = try resolvedRoots()
+        guard !roots.isEmpty || json else {
+            print(Term.dim(Purge.noFoldersMessage))
+            return
+        }
 
         let scanning = "Scanning " + roots.map { Render.shorten($0) }.joined(separator: ", ") + " …"
         if mode == .fullscreen {
@@ -124,13 +126,17 @@ struct Purge: ParsableCommand {
         if out.hadFailures { throw ExitCode.failure }
     }
 
+    static let noFoldersMessage = "No project folders configured. Add one in Preferences."
     static let emptyMessage = "No project artifacts found in readable locations."
 
     private func resolvedDays() throws -> Int {
         if olderThanDays >= 0 { return olderThanDays }
-        let config = try ConfigStore(fileURL: AppPaths.configFile)
-        if let v = config.values["purge.older_than_days"], let n = Int(v), (0...3650).contains(n) { return n }
-        return 7
+        return try ConfigStore(fileURL: AppPaths.configFile).olderThanDays
+    }
+
+    func resolvedRoots() throws -> [String] {
+        guard paths.isEmpty else { return paths.map { Safety.absolutePath($0) } }
+        return try ConfigStore(fileURL: AppPaths.configFile).projectRoots
     }
 
     func renderScan(_ cat: CategoryScan, days: Int, colors: Bool = Term.colorEnabled) {

@@ -17,8 +17,21 @@ enum AppPaths {
     static var ignoreFile: URL { configDir.appendingPathComponent("ignore") }
     static var configFile: URL { configDir.appendingPathComponent("config.json") }
 
-    static func ensureDir() throws {
-        try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+    static func ensureDefaults(configFile: URL = configFile, ignoreFile: URL = ignoreFile) throws {
+        let results = [
+            Result { try createIfMissing(configFile, try ConfigStore.defaultFileData()) },
+            Result { try createIfMissing(ignoreFile, Data()) },
+        ]
+        for case .failure(let error) in results { throw error }
+    }
+
+    private static func createIfMissing(_ file: URL, _ data: Data) throws {
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: file, options: .withoutOverwriting)
     }
 }
 
@@ -26,6 +39,7 @@ enum StoreError: LocalizedError {
     case invalidConfigFile(String)
     case unknownConfigKey(String)
     case invalidConfigValue(key: String, value: String)
+    case invalidProjectRoot(String)
     case invalidIgnorePath
     case invalidIgnoreFile(String)
 
@@ -37,6 +51,8 @@ enum StoreError: LocalizedError {
             return "Unknown setting '\(key)'."
         case .invalidConfigValue(let key, let value):
             return "Invalid value '\(value)' for \(key). Use a whole number from 1 to 3650."
+        case .invalidProjectRoot(let path):
+            return "Project folders must be absolute paths: \(path)"
         case .invalidIgnorePath:
             return "Protected paths cannot be empty, the filesystem root, or contain newline or NUL characters."
         case .invalidIgnoreFile(let path):
@@ -180,35 +196,39 @@ struct IgnoreStore {
 
 struct ConfigStore {
     private(set) var values: [String: String]
+    private var savedRoots: [String]?
     private let fileURL: URL
 
-    static let knownKeys = ["purge.older_than_days"]
-    static let defaultValues = ["purge.older_than_days": "7"]
+    static let daysKey = "purge.older_than_days"
+    static let rootsKey = "purge.roots"
+    static let knownKeys = [daysKey]
+    static let defaultDays = 7
 
-    init() {
-        fileURL = AppPaths.configFile
-        values = (try? Self.load(from: fileURL)) ?? [:]
-    }
+    var olderThanDays: Int { values[Self.daysKey].flatMap { Int($0) } ?? Self.defaultDays }
+    var projectRoots: [String] { savedRoots ?? Purger.defaultRoots }
 
     init(fileURL: URL) throws {
         self.fileURL = fileURL
-        values = try Self.load(from: fileURL)
+        (values, savedRoots) = try Self.load(from: fileURL)
     }
 
     mutating func set(_ key: String, _ value: String) throws {
         let normalized = try Self.normalizedValue(value, for: key)
         var updated = values
         updated[key] = normalized
-        let data = try JSONSerialization.data(
-            withJSONObject: updated,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try data.write(to: fileURL, options: .atomic)
+        try save(values: updated, roots: savedRoots)
         values = updated
+    }
+
+    mutating func setProjectRoots(_ roots: [String]) throws {
+        let standardized = try roots.map { root -> String in
+            guard let path = Self.standardizedRoot(root) else {
+                throw StoreError.invalidProjectRoot(root)
+            }
+            return path
+        }
+        try save(values: values, roots: standardized)
+        savedRoots = standardized
     }
 
     static func normalizedValue(_ value: String, for key: String) throws -> String {
@@ -222,17 +242,49 @@ struct ConfigStore {
         return String(days)
     }
 
-    private static func load(from fileURL: URL) throws -> [String: String] {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [:] }
+    static func defaultFileData() throws -> Data {
+        try encode(values: [daysKey: String(defaultDays)], roots: Purger.defaultRoots)
+    }
+
+    private static func standardizedRoot(_ path: String) -> String? {
+        path.hasPrefix("/") ? (path as NSString).standardizingPath : nil
+    }
+
+    private static func encode(values: [String: String], roots: [String]?) throws -> Data {
+        var object: [String: Any] = values
+        if let roots { object[rootsKey] = roots }
+        return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    private func save(values: [String: String], roots: [String]?) throws {
+        let data = try Self.encode(values: values, roots: roots)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: fileURL, options: .atomic)
+    }
+
+    private static func load(from fileURL: URL) throws -> ([String: String], [String]?) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return ([:], nil) }
         let data = try Data(contentsOf: fileURL)
-        guard let object = try? JSONSerialization.jsonObject(with: data),
-              let values = object as? [String: String]
-        else {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw StoreError.invalidConfigFile(fileURL.path)
         }
-        for (key, value) in values {
-            _ = try normalizedValue(value, for: key)
+        var values: [String: String] = [:]
+        var roots: [String]?
+        for (key, raw) in object {
+            if key == rootsKey {
+                guard let list = raw as? [String] else { throw StoreError.invalidConfigFile(fileURL.path) }
+                roots = try list.map { root in
+                    guard let path = standardizedRoot(root) else { throw StoreError.invalidConfigFile(fileURL.path) }
+                    return path
+                }
+            } else {
+                guard let text = raw as? String else { throw StoreError.invalidConfigFile(fileURL.path) }
+                values[key] = try normalizedValue(text, for: key)
+            }
         }
-        return values
+        return (values, roots)
     }
 }

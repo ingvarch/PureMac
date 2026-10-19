@@ -23,6 +23,7 @@ struct PureMac: ParsableCommand {
             print(Self.helpMessage())
             return
         }
+        try? AppPaths.ensureDefaults()
         try HomeMenu.run()
     }
 }
