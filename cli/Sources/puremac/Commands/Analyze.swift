@@ -295,7 +295,7 @@ struct Analyze: ParsableCommand {
     private func browse(_ target: String, ignore: IgnoreStore) throws {
         let session = try TerminalSession()
         defer { session.close() }
-        guard let first = measure(target, ignore: ignore, session: session, drillingDown: false) else { return }
+        guard case .snapshot(let first) = measure(target, ignore: ignore, session: session, drillingDown: false) else { return }
         var levels = [BrowserLevel(snapshot: first)]
         var running = true
 
@@ -325,8 +325,10 @@ struct Analyze: ParsableCommand {
                 levels[index].selected = max(0, levels[index].snapshot.children.count - 1)
             case .enter, .right:
                 guard let child = Self.focusedChild(levels[index]), child.isDir, !child.isPackage else { continue }
-                if let snapshot = measure(child.path, ignore: ignore, session: session, drillingDown: true) {
-                    levels.append(BrowserLevel(snapshot: snapshot))
+                switch measure(child.path, ignore: ignore, session: session, drillingDown: true) {
+                case .snapshot(let snapshot): levels.append(BrowserLevel(snapshot: snapshot))
+                case .cancelled: break
+                case .exit: running = false
                 }
             case .left, .backspace:
                 if levels.count > 1 { levels.removeLast() }
@@ -345,8 +347,13 @@ struct Analyze: ParsableCommand {
         }
     }
 
-    private func measure(_ path: String, ignore: IgnoreStore, session: TerminalSession, drillingDown: Bool) -> FolderSnapshot? {
-        session.runWithSpinner(
+    private enum MeasureResult {
+        case snapshot(FolderSnapshot), cancelled, exit
+    }
+
+    private func measure(_ path: String, ignore: IgnoreStore, session: TerminalSession, drillingDown: Bool) -> MeasureResult {
+        var exitRequested = false
+        let snapshot = session.runWithSpinner(
             progress: ScanProgress(path: (path as NSString).standardizingPath),
             render: { tick, progress in
                 Self.renderMeasuringBrowser(
@@ -355,7 +362,9 @@ struct Analyze: ParsableCommand {
                 )
             },
             onKey: { key, cancel in
-                if Self.cancelsMeasuring(key, drillingDown: drillingDown) { cancel.cancel() }
+                guard let action = Self.measuringKeyAction(key, drillingDown: drillingDown) else { return }
+                if action == .exit { exitRequested = true }
+                cancel.cancel()
             },
             work: { progress, cancel in
                 let snapshot = scanFolder(path, ignore: ignore, progress: { event in
@@ -364,14 +373,20 @@ struct Analyze: ParsableCommand {
                 return cancel.isCancelled ? nil : snapshot
             }
         )
+        if exitRequested { return .exit }
+        return snapshot.map(MeasureResult.snapshot) ?? .cancelled
     }
 
-    static func cancelsMeasuring(_ key: TerminalKey, drillingDown: Bool) -> Bool {
+    enum MeasureKeyAction: Equatable {
+        case back, exit
+    }
+
+    static func measuringKeyAction(_ key: TerminalKey, drillingDown: Bool) -> MeasureKeyAction? {
         switch key {
-        case .escape: return true
-        case .left, .backspace: return drillingDown
-        case .character(let character): return !drillingDown && character.lowercased() == "q"
-        default: return false
+        case .escape: return drillingDown ? .back : .exit
+        case .left, .backspace: return drillingDown ? .back : nil
+        case .character(let character): return character.lowercased() == "q" ? .exit : nil
+        default: return nil
         }
     }
 
@@ -395,7 +410,7 @@ struct Analyze: ParsableCommand {
         exitKeyHint
     ])
     private static let firstScanHints = KeyHints([exitKeyHint])
-    private static let drillDownHints = KeyHints([KeyHint("←/⌫/Esc", "back")])
+    private static let drillDownHints = KeyHints([KeyHint("←/⌫/Esc", "back"), KeyHint("q", "exit")])
 
     private struct BrowserLayout {
         let header: Rect
@@ -445,7 +460,7 @@ struct Analyze: ParsableCommand {
         let drillingDown: Bool
 
         var hints: KeyHints { drillingDown ? drillDownHints : firstScanHints }
-        var exitHint: String { drillingDown ? "Esc back" : exitText }
+        var exitHint: String { drillingDown ? "Esc back  q exit" : exitText }
 
         var statusSpans: [Span] {
             let status = progress.position == 0 ? "Measuring…" : "Measuring \(progress.position) of \(progress.count)"

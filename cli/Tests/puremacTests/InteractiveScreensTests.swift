@@ -402,20 +402,20 @@ final class InteractiveScreensTests: XCTestCase {
     func testConfirmationFocusMovesWithClamping() {
         var model = selectedModel()
         XCTAssertTrue(model.beginConfirmation())
-        model.moveConfirmationFocus(-1)
+        _ = model.handleConfirmationKey(.left)
         XCTAssertEqual(model.confirmation, .cancel)
-        model.moveConfirmationFocus(1)
+        _ = model.handleConfirmationKey(.right)
         XCTAssertEqual(model.confirmation, .remove)
-        model.moveConfirmationFocus(1)
+        _ = model.handleConfirmationKey(.right)
         XCTAssertEqual(model.confirmation, .remove)
-        model.moveConfirmationFocus(-1)
+        _ = model.handleConfirmationKey(.left)
         XCTAssertEqual(model.confirmation, .cancel)
     }
 
     func testCancelConfirmationReturnsToSelectionAndReopensOnCancel() {
         var model = selectedModel()
         XCTAssertTrue(model.beginConfirmation())
-        model.moveConfirmationFocus(1)
+        _ = model.handleConfirmationKey(.right)
         model.cancelConfirmation()
         XCTAssertFalse(model.isConfirming)
         XCTAssertTrue(model.beginConfirmation())
@@ -549,7 +549,7 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertTrue(cancelFocused.contains("\u{1B}[7m› Cancel ‹"))
         XCTAssertTrue(cancelFocused.contains("\u{1B}[31m[ Remove ]"))
 
-        model.moveConfirmationFocus(1)
+        _ = model.handleConfirmationKey(.right)
         let removeFocused = renderReview(model, width: 80, height: 24).lines(colors: true).joined()
         XCTAssertTrue(removeFocused.contains("\u{1B}[7;31m› Remove ‹"))
         XCTAssertFalse(removeFocused.contains("\u{1B}[7m› Cancel ‹"))

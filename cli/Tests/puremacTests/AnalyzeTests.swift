@@ -438,7 +438,7 @@ final class AnalyzeTests: XCTestCase {
         )
         XCTAssertEqual(
             Analyze.renderMeasuringBrowser(progress: measuringProgress(), tick: 0, drillingDown: true, width: 39, height: 11),
-            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Esc back", width: 39, height: 11)
+            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Esc back  q exit", width: 39, height: 11)
         )
     }
 
@@ -478,6 +478,7 @@ final class AnalyzeTests: XCTestCase {
 
         let drill = measuringLines(measuringProgress(), drillingDown: true).joined(separator: "\n")
         XCTAssertTrue(drill.contains("←/⌫/Esc back"))
+        XCTAssertTrue(drill.contains("q exit"))
         XCTAssertFalse(drill.contains("q/Esc"))
         XCTAssertFalse(drill.contains("reveal"))
     }
@@ -492,18 +493,24 @@ final class AnalyzeTests: XCTestCase {
         XCTAssertTrue(row.contains("aaa"))
     }
 
-    func testWhichKeysCancelAMeasurement() {
+    func testMeasuringKeyActionInTheFirstScan() {
         for key in [TerminalKey.escape, .character("q"), .character("Q")] {
-            XCTAssertTrue(Analyze.cancelsMeasuring(key, drillingDown: false))
+            XCTAssertEqual(Analyze.measuringKeyAction(key, drillingDown: false), .exit)
         }
         for key in [TerminalKey.left, .up, .enter, .backspace, .character("o")] {
-            XCTAssertFalse(Analyze.cancelsMeasuring(key, drillingDown: false))
+            XCTAssertNil(Analyze.measuringKeyAction(key, drillingDown: false))
         }
+    }
+
+    func testMeasuringKeyActionInADrillDown() {
         for key in [TerminalKey.escape, .left, .backspace] {
-            XCTAssertTrue(Analyze.cancelsMeasuring(key, drillingDown: true))
+            XCTAssertEqual(Analyze.measuringKeyAction(key, drillingDown: true), .back)
         }
-        for key in [TerminalKey.character("q"), .right, .enter, .down] {
-            XCTAssertFalse(Analyze.cancelsMeasuring(key, drillingDown: true))
+        for key in [TerminalKey.character("q"), .character("Q")] {
+            XCTAssertEqual(Analyze.measuringKeyAction(key, drillingDown: true), .exit)
+        }
+        for key in [TerminalKey.right, .enter, .down, .character("o")] {
+            XCTAssertNil(Analyze.measuringKeyAction(key, drillingDown: true))
         }
     }
 }

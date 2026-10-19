@@ -13,7 +13,7 @@ enum ReviewDisplayRow {
     case item(ReviewAddress)
 }
 
-enum ConfirmationButton: Int {
+enum ConfirmationButton: Int, CaseIterable {
     case cancel, remove
 }
 
@@ -157,26 +157,14 @@ struct InteractiveReviewModel {
         confirmation = nil
     }
 
-    mutating func moveConfirmationFocus(_ delta: Int) {
-        guard let current = confirmation else { return }
-        let moved = min(ConfirmationButton.remove.rawValue, max(ConfirmationButton.cancel.rawValue, current.rawValue + delta))
-        confirmation = ConfirmationButton(rawValue: moved)
-    }
-
-    mutating func cycleConfirmationFocus() {
-        guard let current = confirmation else { return }
-        confirmation = current == .cancel ? .remove : .cancel
-    }
-
     mutating func handleConfirmationKey(_ key: TerminalKey) -> ReviewKeyRoute {
         guard let focused = confirmation else { return .passthrough }
+        var buttons = ButtonFocus(count: ConfirmationButton.allCases.count, index: focused.rawValue)
+        if buttons.navigate(key) {
+            confirmation = ConfirmationButton(rawValue: buttons.index)
+            return .handled
+        }
         switch key {
-        case .left:
-            moveConfirmationFocus(-1)
-        case .right:
-            moveConfirmationFocus(1)
-        case .tab:
-            cycleConfirmationFocus()
         case .enter:
             if focused == .remove { return .remove }
             cancelConfirmation()
@@ -418,14 +406,9 @@ enum InteractiveReview {
             message: message,
             buttons: [DialogButton("Cancel"), DialogButton("Remove", role: .destructive)],
             focusedButton: focus.rawValue,
-            hints: KeyHints(confirmationHints)
+            hints: StatusScreen.choiceHints
         )
     }
-
-    private static let confirmationHints = [
-        KeyHint("Enter", "select"),
-        KeyHint("Esc", "back")
-    ]
 
     private static let selectHints = [
         KeyHint("↑↓", "move"),

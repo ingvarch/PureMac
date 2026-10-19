@@ -4,6 +4,7 @@ enum StatusScreen {
     static let warningTitle = TextStyle(color: .yellow, bold: true)
     static let cancelHint = KeyHint("Ctrl+C", "cancel")
     static let warningBorder = TextStyle(color: .yellow)
+    static let choiceHints = KeyHints([KeyHint("Enter", "select"), KeyHint("Esc", "back")])
 
     static func render(
         title: String,

@@ -28,20 +28,20 @@ struct PureMac: ParsableCommand {
 }
 
 enum HomeMenu {
+    static let title = "PureMac"
+    static let subtitle = "Your Mac, with room to work.  /  \(puremacVersion)"
+    static let exploreIndex = 2
+    static let options: [(title: String, detail: String)] = [
+        ("Clean caches", "Choose tools and individual paths to remove"),
+        ("Project cleanup", "Review dependencies and generated build artifacts"),
+        ("Explore storage", "Browse folders and find what takes up space"),
+        ("System status", "Inspect memory and available disk space"),
+        ("Preferences", "View cleanup settings and configuration paths"),
+        ("Protected paths", "View folders excluded from cleanup")
+    ]
+
     static func run() throws {
-        let options: [(title: String, detail: String)] = [
-            ("Clean caches", "Choose tools and individual paths to remove"),
-            ("Project cleanup", "Review dependencies and generated build artifacts"),
-            ("Explore storage", "Browse folders and find what takes up space"),
-            ("System status", "Inspect memory and available disk space"),
-            ("Preferences", "View cleanup settings and configuration paths"),
-            ("Protected paths", "View folders excluded from cleanup")
-        ]
-        while let choice = try TerminalMenu.choose(
-            title: "PureMac",
-            subtitle: "Your Mac, with room to work.  /  \(puremacVersion)",
-            options: options
-        ) {
+        while let choice = try TerminalMenu.choose(title: title, subtitle: subtitle, options: options) {
             switch choice {
             case 0:
                 guard let category = try TerminalMenu.choose(
@@ -58,7 +58,9 @@ enum HomeMenu {
                 let arguments = [[], ["dev"], ["junk"], ["ai"], ["trash"]]
                 try Clean.parse(arguments[category]).run()
             case 1: try Purge.parse([]).run()
-            case 2: try Analyze.parse([]).run()
+            case exploreIndex:
+                guard try ExploreConfirmation.ask() else { continue }
+                try Analyze.parse([]).run()
             case 3: try Optimize.parse([]).run()
             case 4: try Config.parse([]).run()
             case 5: try Ignore.List.parse([]).run()
