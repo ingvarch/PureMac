@@ -39,7 +39,7 @@ final class CleanupFlowTests: XCTestCase {
         XCTAssertFalse(CleanupFlow.closesInfoDialog(.up))
     }
 
-    func testRemovingScreenShowsStatusDialogWithoutButtonsOverFadedFinalReview() {
+    func testRemovingScreenShowsStatusDialogWithoutButtonsOverFadedSelectionScreen() {
         let buffer = CleanupFlow.removingScreen(review: review(), labels: labels, width: 80, height: 24)
         let lines = buffer.plainLines()
         XCTAssertTrue(lines.contains { $0.contains("Removing 2 items…") })
@@ -47,9 +47,10 @@ final class CleanupFlowTests: XCTestCase {
         let dialog = CleanupFlow.removingDialog(count: 2, total: 3_000, noun: "item")
         XCTAssertTrue(dialog.buttons.isEmpty)
         XCTAssertNil(dialog.focusedButton)
-        XCTAssertTrue(lines.contains { $0.contains("╭─ Final review ") })
+        XCTAssertTrue(lines.contains { $0.contains("╭─ Choose items to clean ") })
+        XCTAssertFalse(lines.contains { $0.contains("Final review") })
         XCTAssertTrue(lines.contains { $0.contains("/tmp/first") })
-        XCTAssertFalse(lines.contains { $0.contains("/tmp/third") })
+        XCTAssertTrue(lines.contains { $0.contains("/tmp/third") })
         XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
         let frame = CleanupFlow.removingDialog(count: 2, total: 3_000, noun: "item").frame(in: buffer.area)
         XCTAssertEqual(buffer[frame.x, frame.y].style, TextStyle(color: .yellow))
@@ -187,8 +188,8 @@ final class CleanupFlowTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.contains("Esc") || $0.contains("cancel") })
     }
 
-    func testBackgroundKeepsTheReviewFilter() {
-        let model = InteractiveReviewModel.reviewing(selection(), selecting: [0], query: "first")
+    func testBackgroundKeepsTheSelectionFilter() {
+        let model = InteractiveReviewModel.selected(selection(), selecting: [0], query: "first")
         let lines = CleanupFlow.resultScreen(
             outcome: CleanOutcome(removed: 1, freedBytes: 1_000), review: model, labels: labels, width: 80, height: 24
         ).plainLines()
@@ -196,7 +197,7 @@ final class CleanupFlowTests: XCTestCase {
     }
 
     private func review() -> InteractiveReviewModel {
-        .reviewing(selection(), selecting: [0, 1])
+        .selected(selection(), selecting: [0, 1])
     }
 
     private func selection() -> [CategoryScan] {

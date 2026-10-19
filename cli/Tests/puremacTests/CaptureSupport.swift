@@ -1,5 +1,4 @@
 import Foundation
-import XCTest
 @testable import puremac
 
 func capture(_ descriptor: Int32, _ body: () throws -> Void) throws -> String {
@@ -25,7 +24,7 @@ func captureStdout(_ body: () throws -> Void) throws -> String { try capture(STD
 func captureStderr(_ body: () throws -> Void) throws -> String { try capture(STDERR_FILENO, body) }
 
 extension InteractiveReviewModel {
-    static func reviewing(_ categories: [CategoryScan], selecting indices: [Int], query: String = "") -> InteractiveReviewModel {
+    static func selected(_ categories: [CategoryScan], selecting indices: [Int], query: String = "") -> InteractiveReviewModel {
         var model = InteractiveReviewModel(categories: categories)
         if !query.isEmpty { model.updateQuery(query) }
         var position = 0
@@ -34,7 +33,6 @@ extension InteractiveReviewModel {
             position = index
             model.toggleFocused()
         }
-        XCTAssertTrue(model.beginReview())
         return model
     }
 }

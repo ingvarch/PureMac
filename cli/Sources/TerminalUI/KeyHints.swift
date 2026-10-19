@@ -21,7 +21,7 @@ public struct KeyHints {
         var used = 0
         for hint in hints {
             let spans = [Span(hint.key), Span(" " + hint.action, TextStyle(dim: true))]
-            let hintWidth = spans.reduce(0) { $0 + Term.displayWidth($1.text) }
+            let hintWidth = Term.displayWidth(spans)
             let needed = current.isEmpty ? hintWidth : used + separator.count + hintWidth
             if !current.isEmpty, needed > width {
                 rows.append(current)

@@ -92,7 +92,7 @@ enum CleanupFlow {
         let dialog = removingDialog(count: review.selectedCount, total: review.selectedBytes, noun: labels.noun)
         return StatusScreen.overlay(
             dialog,
-            on: finalReview(review, labels: labels, width: width, height: height),
+            on: selectionScreen(review, labels: labels, width: width, height: height),
             tooSmallExitHint: "Removing…"
         )
     }
@@ -100,7 +100,7 @@ enum CleanupFlow {
     static func resultScreen(outcome: CleanOutcome, review: InteractiveReviewModel, labels: Labels, width: Int, height: Int) -> Buffer {
         StatusScreen.overlay(
             resultDialog(outcome, area: Rect(x: 0, y: 0, width: width, height: height)),
-            on: finalReview(review, labels: labels, width: width, height: height),
+            on: selectionScreen(review, labels: labels, width: width, height: height),
             tooSmallExitHint: closeHint
         )
     }
@@ -142,7 +142,7 @@ enum CleanupFlow {
         )
     }
 
-    private static func finalReview(_ review: InteractiveReviewModel, labels: Labels, width: Int, height: Int) -> Buffer {
+    private static func selectionScreen(_ review: InteractiveReviewModel, labels: Labels, width: Int, height: Int) -> Buffer {
         InteractiveReview.render(
             model: review,
             title: labels.reviewTitle,

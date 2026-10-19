@@ -68,6 +68,10 @@ public enum Term {
         return output
     }
 
+    public static func displayWidth(_ spans: [Span]) -> Int {
+        spans.reduce(0) { $0 + displayWidth(sanitize($1.text)) }
+    }
+
     public static func displayWidth(_ string: String) -> Int {
         _ = localeConfigured
         var width = 0

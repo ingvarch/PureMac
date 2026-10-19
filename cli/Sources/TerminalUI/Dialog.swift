@@ -50,25 +50,33 @@ public struct Dialog {
         buffer.clear(frame)
         let content = Window(title: title, borderStyle: borderStyle, titleStyle: titleStyle)
             .render(in: frame, buffer: &buffer)
-        var row = content.y
+        var row = content.y + layout.blankAboveMessage
         for message in layout.messageRows {
-            buffer.write([message], x: content.x, y: row, maxWidth: content.width)
+            renderCentered([message], in: content, row: row, buffer: &buffer)
             row += 1
         }
-        row += layout.blankRows
+        row += layout.blankBelowMessage
         if !buttons.isEmpty {
             renderButtons(in: content, row: row, buffer: &buffer)
             row += 1
         }
-        hints?.render(in: Rect(x: content.x, y: row, width: content.width, height: layout.hintRows), buffer: &buffer)
+        row += layout.blankBelowButtons
+        for spans in hints?.rows(width: content.width) ?? [] {
+            renderCentered(spans, in: content, row: row, buffer: &buffer)
+            row += 1
+        }
     }
 
     private struct Layout {
         var messageRows: [Span]
-        var blankRows: Int
+        var blankAboveMessage = 0
+        var blankBelowMessage = 0
+        var blankBelowButtons = 0
         var hintRows: Int
         var buttonRows: Int
-        var height: Int { messageRows.count + blankRows + buttonRows + hintRows }
+        var height: Int {
+            messageRows.count + blankAboveMessage + blankBelowMessage + blankBelowButtons + buttonRows + hintRows
+        }
     }
 
     private func placement(in area: Rect) -> (frame: Rect, layout: Layout) {
@@ -85,22 +93,23 @@ public struct Dialog {
         return (frame, layout)
     }
 
-    private var buttonLabels: [String] {
-        buttons.indices.map { index in
-            let title = Term.sanitize(buttons[index].title)
-            return index == focusedButton ? "› \(title) ‹" : "[ \(title) ]"
+    private var buttonSpans: [Span] {
+        var spans: [Span] = []
+        for (index, button) in buttons.enumerated() {
+            if index > 0 { spans.append(Span("  ")) }
+            let title = Term.sanitize(button.title)
+            let focused = index == focusedButton
+            let style = TextStyle(color: button.role == .destructive ? .red : nil, inverse: focused)
+            spans.append(Span(focused ? "› \(title) ‹" : "[ \(title) ]", style))
         }
-    }
-
-    private var buttonsWidth: Int {
-        guard !buttons.isEmpty else { return 0 }
-        return buttonLabels.reduce(0) { $0 + Term.displayWidth($1) } + 2 * (buttons.count - 1)
+        return spans
     }
 
     private func contentWidth(maxWidth: Int) -> Int {
         let titleWidth = Term.displayWidth(Term.sanitize(title)) + 2
         let messageWidth = message.map { Term.displayWidth(Term.sanitize($0.text)) }.max() ?? 0
-        let hintWidth = hints?.rows(width: .max).first?.reduce(0) { $0 + Term.displayWidth($1.text) } ?? 0
+        let buttonsWidth = Term.displayWidth(buttonSpans)
+        let hintWidth = hints?.rows(width: .max).first.map(Term.displayWidth) ?? 0
         return max(1, min(max(titleWidth, messageWidth, buttonsWidth, hintWidth), maxWidth))
     }
 
@@ -111,17 +120,26 @@ public struct Dialog {
         let wrapped = message.flatMap { paragraph in
             Term.wordWrap(paragraph.text, width: contentWidth).map { Span($0, paragraph.style) }
         }
-        let blankRows = tailRows > 0 && wrapped.count + 1 + tailRows <= maxRows ? 1 : 0
-        let messageRows = Array(wrapped.prefix(max(0, maxRows - blankRows - tailRows)))
-        return Layout(messageRows: messageRows, blankRows: blankRows, hintRows: hintRows, buttonRows: buttonRows)
+        var layout = Layout(messageRows: wrapped, hintRows: hintRows, buttonRows: buttonRows)
+        if !wrapped.isEmpty {
+            layout.blankAboveMessage = 1
+            layout.blankBelowMessage = tailRows > 0 ? 1 : 0
+        }
+        layout.blankBelowButtons = buttonRows > 0 && hintRows > 0 ? 1 : 0
+        if layout.height > maxRows { layout.blankBelowButtons = 0 }
+        if layout.height > maxRows { layout.blankBelowMessage = 0 }
+        if layout.height > maxRows { layout.blankAboveMessage = 0 }
+        layout.messageRows = Array(wrapped.prefix(max(0, maxRows - layout.height + wrapped.count)))
+        return layout
+    }
+
+    private func renderCentered(_ spans: [Span], in content: Rect, row: Int, buffer: inout Buffer) {
+        let width = Term.displayWidth(spans)
+        let column = content.x + max(0, content.width - width) / 2
+        buffer.write(spans, x: column, y: row, maxWidth: content.x + content.width - column)
     }
 
     private func renderButtons(in content: Rect, row: Int, buffer: inout Buffer) {
-        var column = max(content.x, content.x + content.width - buttonsWidth)
-        for (index, label) in buttonLabels.enumerated() {
-            let focused = index == focusedButton
-            let style = TextStyle(color: buttons[index].role == .destructive ? .red : nil, inverse: focused)
-            column += buffer.write(label, x: column, y: row, style: style, maxWidth: content.x + content.width - column) + 2
-        }
+        renderCentered(buttonSpans, in: content, row: row, buffer: &buffer)
     }
 }

@@ -25,11 +25,9 @@ struct InteractiveReviewModel {
     var categories: [CategoryScan]
     var query = ""
     var isSearching = false
-    var isReviewing = false
     var status = ""
     var pathOffset = 0
     private(set) var focus = 0
-    private(set) var reviewFocus = 0
     private(set) var confirmation: ConfirmationButton?
 
     var isConfirming: Bool { confirmation != nil }
@@ -91,44 +89,36 @@ struct InteractiveReviewModel {
         categories.reduce(Int64(0)) { $0 + $1.allBytes }
     }
 
+    var hiddenSelectedCount: Int {
+        let shown = Set(matchingAddresses)
+        return selectedAddresses.filter { !shown.contains($0) }.count
+    }
+
     var focusedAddress: ReviewAddress? {
-        let addresses = isReviewing ? selectedAddresses : matchingAddresses
-        let index = isReviewing ? reviewFocus : focus
-        guard addresses.indices.contains(index) else { return nil }
-        return addresses[index]
+        let addresses = matchingAddresses
+        guard addresses.indices.contains(focus) else { return nil }
+        return addresses[focus]
     }
 
     mutating func move(_ delta: Int) {
-        let count = isReviewing ? selectedAddresses.count : matchingAddresses.count
+        let count = matchingAddresses.count
         guard count > 0 else { return }
-        if isReviewing {
-            reviewFocus = min(count - 1, max(0, reviewFocus + delta))
-        } else {
-            focus = min(count - 1, max(0, focus + delta))
-        }
+        focus = min(count - 1, max(0, focus + delta))
         pathOffset = 0
     }
 
     mutating func moveToStart() {
-        if isReviewing {
-            reviewFocus = 0
-        } else {
-            focus = 0
-        }
+        focus = 0
         pathOffset = 0
     }
 
     mutating func moveToEnd() {
-        if isReviewing {
-            reviewFocus = max(0, selectedAddresses.count - 1)
-        } else {
-            focus = max(0, matchingAddresses.count - 1)
-        }
+        focus = max(0, matchingAddresses.count - 1)
         pathOffset = 0
     }
 
     mutating func toggleFocused() {
-        guard !isReviewing, let address = focusedAddress else { return }
+        guard let address = focusedAddress else { return }
         categories[address.category].groups[address.group].items[address.item].selected.toggle()
     }
 
@@ -143,7 +133,6 @@ struct InteractiveReviewModel {
         for address in allAddresses {
             categories[address.category].groups[address.group].items[address.item].selected = false
         }
-        reviewFocus = 0
         status = "Selection cleared"
     }
 
@@ -154,20 +143,12 @@ struct InteractiveReviewModel {
         status = ""
     }
 
-    mutating func beginReview() -> Bool {
+    mutating func beginConfirmation() -> Bool {
         guard selectedCount > 0 else {
             status = "Select at least one item to continue"
             return false
         }
-        isReviewing = true
-        reviewFocus = 0
-        pathOffset = 0
         status = ""
-        return true
-    }
-
-    mutating func beginConfirmation() -> Bool {
-        guard isReviewing else { return false }
         confirmation = .cancel
         return true
     }
@@ -216,7 +197,7 @@ struct InteractiveReviewModel {
 
     mutating func routeKey(_ key: TerminalKey) -> ReviewKeyRoute {
         if isConfirming { return handleConfirmationKey(key) }
-        if isReviewing, key == .enter {
+        if key == .enter, !isSearching {
             _ = beginConfirmation()
             return .handled
         }
@@ -233,18 +214,11 @@ struct InteractiveReviewModel {
         }
     }
 
-    mutating func endReview() {
-        isReviewing = false
-        pathOffset = 0
-        status = ""
-    }
-
-    func displayRows(reviewing: Bool) -> [ReviewDisplayRow] {
-        let addresses = reviewing ? selectedAddresses : matchingAddresses
+    var displayRows: [ReviewDisplayRow] {
         var rows: [ReviewDisplayRow] = []
         var lastCategory: Int?
         var lastGroup: Int?
-        for address in addresses {
+        for address in matchingAddresses {
             if lastCategory != address.category {
                 rows.append(.category(address.category))
                 lastCategory = address.category
@@ -352,25 +326,17 @@ enum InteractiveReview {
                 model.pathOffset += max(8, session.width / 3)
             case .space:
                 model.toggleFocused()
-            case .enter:
-                _ = model.beginReview()
             case .escape:
-                if model.isReviewing {
-                    model.endReview()
-                } else {
-                    return nil
-                }
+                return nil
             case .character(let character):
                 switch character.lowercasedString {
                 case "a":
-                    if !model.isReviewing { model.selectAllMatching() }
+                    model.selectAllMatching()
                 case "n":
-                    if !model.isReviewing { model.selectNone() }
+                    model.selectNone()
                 case "/":
-                    if !model.isReviewing {
-                        model.isSearching = true
-                        model.status = ""
-                    }
+                    model.isSearching = true
+                    model.status = ""
                 case "q":
                     return nil
                 default:
@@ -396,16 +362,12 @@ enum InteractiveReview {
             return TooSmallScreen.render(title: "PureMac", exitHint: "Esc/q cancel", width: width, height: height)
         }
         var buffer = Buffer(width: width, height: height)
-        let reviewing = model.isReviewing
-        let accent = StatusScreen.warningBorder
         let window = Window(
-            title: reviewing ? "Final review" : title,
-            info: "\(model.selectedCount) selected · \(ByteCount.human(model.selectedBytes))",
-            borderStyle: reviewing ? accent : TextStyle(dim: true),
-            titleStyle: reviewing ? StatusScreen.warningTitle : TextStyle(color: .cyan, bold: true)
+            title: title,
+            info: "\(model.selectedCount) selected · \(ByteCount.human(model.selectedBytes))"
         )
         let content = window.render(in: buffer.area, buffer: &buffer)
-        let hints = KeyHints(reviewing ? reviewHints : selectHints)
+        let hints = KeyHints(selectHints)
         let areas = content.splitRows(
             [.length(1), .fill, .length(1), .length(1), .length(hints.rows(width: content.width).count)]
         )
@@ -416,7 +378,7 @@ enum InteractiveReview {
         buffer.write(focusedPathSpans(model: model, width: path.width), x: path.x, y: path.y, maxWidth: path.width)
         hints.render(in: footer, buffer: &buffer)
 
-        let rows = model.displayRows(reviewing: reviewing)
+        let rows = model.displayRows
         let focusedAddress = model.focusedAddress
         let focusedRow = rows.firstIndex { row in
             if case .item(let address) = row { return address == focusedAddress }
@@ -430,19 +392,30 @@ enum InteractiveReview {
         Scrollbar(total: rows.count, visible: list.height, offset: start)
             .render(column: width - 1, rows: list.y..<(list.y + list.height), buffer: &buffer)
         guard let focus = model.confirmation else { return buffer }
-        let dialog = confirmationDialog(count: model.selectedCount, total: model.selectedBytes, noun: noun, focus: focus)
+        let dialog = confirmationDialog(
+            count: model.selectedCount,
+            total: model.selectedBytes,
+            hidden: model.hiddenSelectedCount,
+            noun: noun,
+            focus: focus
+        )
         return StatusScreen.overlay(dialog, on: buffer)
     }
 
-    static func confirmationDialog(count: Int, total: Int64, noun: String, focus: ConfirmationButton) -> Dialog {
-        Dialog(
+    static func confirmationDialog(
+        count: Int,
+        total: Int64,
+        hidden: Int,
+        noun: String,
+        focus: ConfirmationButton
+    ) -> Dialog {
+        var message = [Span("\(ByteCount.human(total)) will be deleted")]
+        if hidden > 0 { message.append(Span("\(hidden) hidden by search", TextStyle(dim: true))) }
+        return Dialog(
             title: "Remove \(CleanupFlow.counted(count, noun))?",
             titleStyle: StatusScreen.warningTitle,
             borderStyle: StatusScreen.warningBorder,
-            message: [
-                Span("\(ByteCount.human(total)) will be permanently deleted."),
-                Span("This cannot be undone.")
-            ],
+            message: message,
             buttons: [DialogButton("Cancel"), DialogButton("Remove", role: .destructive)],
             focusedButton: focus.rawValue,
             hints: KeyHints(confirmationHints)
@@ -450,9 +423,7 @@ enum InteractiveReview {
     }
 
     private static let confirmationHints = [
-        KeyHint("←→", "choose"),
         KeyHint("Enter", "select"),
-        KeyHint("Y", "remove"),
         KeyHint("Esc", "back")
     ]
 
@@ -463,16 +434,8 @@ enum InteractiveReview {
         KeyHint("A", "all"),
         KeyHint("N", "none"),
         KeyHint("/", "search"),
-        KeyHint("Enter", "review"),
+        KeyHint("Enter", "remove"),
         KeyHint("Esc/q", "cancel")
-    ]
-
-    private static let reviewHints = [
-        KeyHint("↑↓", "scroll"),
-        KeyHint("←→", "path"),
-        KeyHint("Enter", "confirm"),
-        KeyHint("Esc", "edit"),
-        KeyHint("q", "cancel")
     ]
 
     private static func renderHeader(model: InteractiveReviewModel, in rect: Rect, buffer: inout Buffer) {

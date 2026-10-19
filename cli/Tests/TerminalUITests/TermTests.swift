@@ -8,6 +8,12 @@ final class TermTests: XCTestCase {
         XCTAssertEqual(Term.displayWidth("a\u{301}"), 1)
     }
 
+    func testSpanWidthSumsSanitizedText() {
+        XCTAssertEqual(Term.displayWidth([Span("ab"), Span("界")]), 4)
+        XCTAssertEqual(Term.displayWidth([Span("a\u{1B}[2Jb")]), 6)
+        XCTAssertEqual(Term.displayWidth([Span]()), 0)
+    }
+
     func testTerminalControlCharactersAreSanitized() {
         XCTAssertEqual(Term.sanitize("safe\u{1B}[2Jname\n"), "safe�[2Jname�")
         XCTAssertEqual(Term.sanitize("one\ttwo"), "one two")
