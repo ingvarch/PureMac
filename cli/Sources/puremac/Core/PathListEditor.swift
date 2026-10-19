@@ -25,6 +25,7 @@ struct PathListConfig {
     var add: (String) throws -> Void
     var remove: (String) throws -> Void
     var removalPrompt: RemovalPrompt?
+    var inputLabel = "Add folder"
 }
 
 extension PathListConfig {
@@ -75,7 +76,8 @@ extension PathListConfig {
             removalPrompt: RemovalPrompt(
                 title: { "Stop protecting \($0)?" },
                 button: "Remove protection"
-            )
+            ),
+            inputLabel: "Add path"
         )
     }
 }
@@ -97,7 +99,6 @@ struct PathListEditor {
     private static let buttonCount = 2
     private static let cancelIndex = 0
     private static let removeIndex = buttonCount - 1
-    private static let inputLabel = "Add folder  "
     private static let notFound = " not found"
 
     init(_ config: PathListConfig) {
@@ -147,7 +148,10 @@ struct PathListEditor {
         case .enter:
             guard let text = input?.text else { return }
             let add = config.add
-            if perform({ try add(text) }) { input = nil }
+            let before = Set(paths)
+            guard perform({ try add(text) }) else { return }
+            input = nil
+            if let added = paths.firstIndex(where: { !before.contains($0) }) { focus = added }
         case .escape: input = nil
         default: input?.handle(key)
         }
@@ -234,7 +238,7 @@ struct PathListEditor {
             buffer.write(row, x: status.x, y: status.y + offset, maxWidth: status.width)
         }
         if let input {
-            buffer.write(input.fieldSpans(label: Self.inputLabel, width: field.width), x: field.x, y: field.y, maxWidth: field.width)
+            buffer.write(input.fieldSpans(label: config.inputLabel + "  ", width: field.width), x: field.x, y: field.y, maxWidth: field.width)
         }
         renderList(in: list, buffer: &buffer)
         guard let confirmation, let prompt = config.removalPrompt, paths.indices.contains(focus) else { return buffer }

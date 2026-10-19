@@ -12,6 +12,7 @@ private final class FakeList {
     var removed: [String] = []
     var addError: Error?
     var loadError: Error?
+    var sorted = false
 
     init(_ paths: [String]) { self.paths = paths }
 
@@ -27,6 +28,7 @@ private final class FakeList {
                 if let error = self.addError { throw error }
                 self.added.append(path)
                 self.paths.append(path)
+                if self.sorted { self.paths.sort() }
             },
             remove: { path in
                 self.removed.append(path)
@@ -74,6 +76,61 @@ final class PathListEditorTests: XCTestCase {
         XCTAssertFalse(editor.handle(.down))
         XCTAssertFalse(editor.handle(.character("x")))
         XCTAssertTrue(editor.handle(.escape))
+    }
+
+    func testProjectFoldersLabelTheInputAddFolderAndProtectedPathsAddPath() throws {
+        XCTAssertEqual(PathListConfig.projectFolders.inputLabel, "Add folder")
+        XCTAssertEqual(PathListConfig.protectedPaths.inputLabel, "Add path")
+        var config = FakeList([]).config()
+        config.inputLabel = "Add path"
+        var editor = PathListEditor(config)
+        _ = editor.handle(.character("a"))
+        XCTAssertTrue(lines(editor)[21].hasPrefix("│ Add path  ~/ "), lines(editor)[21])
+    }
+
+    func testFocusMovesToTheNewEntryAfterAnAdd() {
+        let list = FakeList(["/b", "/d"])
+        list.sorted = true
+        var editor = editor(list)
+        _ = editor.handle(.character("a"))
+        for _ in 0..<2 { _ = editor.handle(.backspace) }
+        type("/c", into: &editor)
+        _ = editor.handle(.enter)
+        XCTAssertEqual(editor.paths, ["/b", "/c", "/d"])
+        XCTAssertEqual(editor.focus, 1)
+    }
+
+    func testFocusMovesToTheEndWhenTheNewEntryIsAppended() {
+        var editor = editor(FakeList(["/a", "/b"]))
+        _ = editor.handle(.character("a"))
+        type("x", into: &editor)
+        _ = editor.handle(.enter)
+        XCTAssertEqual(editor.focus, 2)
+    }
+
+    func testFocusStaysWhenAnAddFails() {
+        let list = FakeList(["/a", "/b"])
+        list.addError = Rejected()
+        var editor = editor(list)
+        _ = editor.handle(.down)
+        _ = editor.handle(.character("a"))
+        _ = editor.handle(.enter)
+        XCTAssertEqual(editor.focus, 1)
+    }
+
+    func testProtectedPathsFocusFollowsTheSortedPosition() throws {
+        try withConfigHome { _ in
+            var store = try IgnoreStore(fileURL: AppPaths.ignoreFile)
+            _ = try store.add("/tmp/puremac-a")
+            _ = try store.add("/tmp/puremac-c")
+            var editor = PathListEditor(.protectedPaths)
+            _ = editor.handle(.character("a"))
+            for _ in 0..<2 { _ = editor.handle(.backspace) }
+            type("/tmp/puremac-b", into: &editor)
+            _ = editor.handle(.enter)
+            XCTAssertEqual(editor.paths, ["/tmp/puremac-a", "/tmp/puremac-b", "/tmp/puremac-c"])
+            XCTAssertEqual(editor.focus, 1)
+        }
     }
 
     func testAOpensTheInputPrefilledWithTilde() {

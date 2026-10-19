@@ -99,25 +99,4 @@ final class PreferencesSheetTests: XCTestCase {
         guard case .path(let first) = sheet.sections[0].rows[0] else { return XCTFail("path row") }
         XCTAssertEqual(first, "/tmp/a")
     }
-
-    func testHomeMenuOpensSheetsOnlyForStatusAndPreferences() throws {
-        try withConfigHome { _ in
-            for choice in 0...2 { XCTAssertNil(HomeMenu.sheet(forChoice: choice), "\(choice)") }
-            XCTAssertEqual(HomeMenu.sheet(forChoice: 3)?.title, "Mac status")
-            XCTAssertEqual(HomeMenu.sheet(forChoice: 4)?.title, "PureMac CLI settings")
-            XCTAssertNil(HomeMenu.sheet(forChoice: 5))
-            XCTAssertNil(HomeMenu.sheet(forChoice: 6))
-        }
-    }
-
-    func testHomeMenuShowsAStoreErrorAsARedRowInsteadOfThrowing() throws {
-        try withConfigHome { dir in
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try Data("[]".utf8).write(to: AppPaths.configFile)
-            let sheet = try XCTUnwrap(HomeMenu.sheet(forChoice: 4))
-            XCTAssertEqual(sheet.title, "PureMac CLI settings")
-            guard case .message(let spans) = sheet.sections[0].rows[0] else { return XCTFail("error row") }
-            XCTAssertEqual(spans.first?.style, TextStyle(color: .red))
-        }
-    }
 }

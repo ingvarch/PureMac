@@ -73,8 +73,4 @@ struct Config: ParsableCommand {
             footnote: nil
         )
     }
-
-    static func currentSheet() throws -> InfoSheet {
-        sheet(store: try ConfigStore(fileURL: AppPaths.configFile))
-    }
 }

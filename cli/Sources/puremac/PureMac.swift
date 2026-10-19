@@ -23,8 +23,9 @@ struct PureMac: ParsableCommand {
             print(Self.helpMessage())
             return
         }
-        try? AppPaths.ensureDefaults()
-        try HomeMenu.run()
+        var setupError: Error?
+        do { try AppPaths.ensureDefaults() } catch { setupError = error }
+        try HomeMenu.run(setupError: setupError)
     }
 }
 
@@ -32,17 +33,18 @@ enum HomeMenu {
     static let title = "PureMac"
     static let subtitle = "Your Mac, with room to work.  /  \(puremacVersion)"
     static let exploreIndex = 2
+    static let preferencesIndex = 4
     static let protectedPathsIndex = 5
     static let options: [(title: String, detail: String)] = [
         ("Clean caches", "Choose tools and individual paths to remove"),
         ("Project cleanup", "Review dependencies and generated build artifacts"),
         ("Explore storage", "Browse folders and find what takes up space"),
         ("System status", "Inspect memory and available disk space"),
-        ("Preferences", "View cleanup settings and configuration paths"),
-        ("Protected paths", "View folders excluded from cleanup")
+        ("Preferences", "Change cleanup age, project folders, and protection"),
+        ("Protected paths", "Choose paths excluded from cleanup")
     ]
 
-    static func run() throws {
+    static func run(setupError: Error?) throws {
         var focus = 0
         while let choice = try TerminalMenu.choose(title: title, subtitle: subtitle, options: options, initialSelection: focus) {
             focus = choice
@@ -71,6 +73,10 @@ enum HomeMenu {
             case exploreIndex:
                 guard try ExploreConfirmation.ask() else { continue }
                 try Analyze.parse([]).run()
+            case preferencesIndex:
+                let session = try TerminalSession()
+                defer { session.close() }
+                PreferencesScreen.run(setupError: setupError, in: session)
             case protectedPathsIndex:
                 let session = try TerminalSession()
                 defer { session.close() }
@@ -83,7 +89,6 @@ enum HomeMenu {
     static func sheet(forChoice choice: Int) -> InfoSheet? {
         switch choice {
         case 3: return InfoSheet.loading(title: Optimize.statusTitle, Optimize.currentStatusSheet)
-        case 4: return InfoSheet.loading(title: Config.sheetTitle, Config.currentSheet)
         default: return nil
         }
     }
