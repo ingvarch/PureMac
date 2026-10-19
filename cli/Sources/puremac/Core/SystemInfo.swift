@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import TerminalUI
 
 struct MemoryStatus: Equatable {
     let total: Int64
@@ -8,6 +9,39 @@ struct MemoryStatus: Equatable {
     let active: Int64
     let wired: Int64
     let compressed: Int64
+
+    var usedFraction: Double {
+        total > 0 ? Double(total - free) / Double(total) : 0
+    }
+}
+
+enum MemoryPressure: Equatable {
+    case normal, warning, critical
+
+    init?(level: Int) {
+        switch level {
+        case 1: self = .normal
+        case 2: self = .warning
+        case 4: self = .critical
+        default: return nil
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .normal: return "Normal"
+        case .warning: return "Warning"
+        case .critical: return "Critical"
+        }
+    }
+
+    var color: TerminalColor {
+        switch self {
+        case .normal: return .green
+        case .warning: return .yellow
+        case .critical: return .red
+        }
+    }
 }
 
 struct VolumeStatus: Equatable {
@@ -17,6 +51,20 @@ struct VolumeStatus: Equatable {
 
     var systemManagedCapacity: Int64 {
         max(0, availableForImportantUsage - availableNow)
+    }
+
+    var freeFraction: Double {
+        total > 0 ? Double(availableNow) / Double(total) : 1
+    }
+
+    var usedFraction: Double { 1 - freeFraction }
+
+    var freeColor: TerminalColor {
+        switch freeFraction {
+        case ..<0.1: return .red
+        case ..<0.2: return .yellow
+        default: return .green
+        }
     }
 }
 
@@ -60,6 +108,13 @@ enum SystemInfo {
             wired: Int64(stats.wire_count) * page,
             compressed: Int64(stats.compressor_page_count) * page
         )
+    }
+
+    static func memoryPressure() -> MemoryPressure? {
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return nil }
+        return MemoryPressure(level: Int(level))
     }
 
     static func volumeStatus(_ path: String) throws -> VolumeStatus {

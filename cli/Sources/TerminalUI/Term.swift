@@ -164,7 +164,7 @@ extension Term {
         return lines.isEmpty ? [""] : lines
     }
 
-    static func wordWrap(_ string: String, width: Int) -> [String] {
+    public static func wordWrap(_ string: String, width: Int) -> [String] {
         var lines: [String] = []
         var current = ""
         var gap = ""
