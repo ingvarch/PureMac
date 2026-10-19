@@ -157,6 +157,11 @@ public final class TerminalSession {
         return first == 0x1B ? readEscapeSequence() : decodeCharacter(firstByte: first)
     }
 
+    public func readKey(timeoutMilliseconds: Int) -> TerminalKey? {
+        guard !isClosed, inputAvailable(milliseconds: Int32(clamping: timeoutMilliseconds)) else { return nil }
+        return readKey()
+    }
+
     static func key(forSimpleByte byte: UInt8) -> TerminalKey? {
         switch byte {
         case 0x0A, 0x0D: return .enter
