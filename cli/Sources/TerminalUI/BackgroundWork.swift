@@ -61,12 +61,25 @@ enum BackgroundWork {
         var tick = 0
         while outcome.value == nil {
             draw(tick, progress.value)
-            if let key = readKey(redrawIntervalMilliseconds) {
-                onKey(key, cancel)
+            let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(redrawIntervalMilliseconds) * 1_000_000
+            while outcome.value == nil {
+                let remaining = remainingMilliseconds(until: deadline)
+                guard remaining > 0 else { break }
+                if let key = readKey(remaining) {
+                    onKey(key, cancel)
+                }
             }
             tick += 1
         }
         return outcome.value!
+    }
+}
+
+extension BackgroundWork {
+    private static func remainingMilliseconds(until deadline: UInt64) -> Int {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard deadline > now else { return 0 }
+        return Int((deadline - now + 999_999) / 1_000_000)
     }
 }
 

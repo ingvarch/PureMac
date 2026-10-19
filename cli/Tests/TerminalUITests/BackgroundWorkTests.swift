@@ -7,16 +7,14 @@ final class BackgroundWorkTests: XCTestCase {
     func testRedrawsUntilWorkFinishesAndTickIncreases() {
         let release = DispatchSemaphore(value: 0)
         var ticks: [Int] = []
-        var reads = 0
 
         let result = BackgroundWork.run(
             progress: 0,
-            draw: { tick, _ in ticks.append(tick) },
-            readKey: { _ in
-                reads += 1
-                if reads == 5 { release.signal() }
-                return nil
+            draw: { tick, _ in
+                ticks.append(tick)
+                if ticks.count == 5 { release.signal() }
             },
+            readKey: { _ in nil },
             onKey: { _, _ in },
             work: { _, _ in
                 _ = release.wait(timeout: .now() + self.wait)
@@ -29,7 +27,7 @@ final class BackgroundWorkTests: XCTestCase {
         XCTAssertEqual(ticks, Array(0..<ticks.count))
     }
 
-    func testReadKeyGetsTheRedrawIntervalAsTimeout() {
+    func testReadKeyTimeoutsNeverExceedTheRedrawInterval() {
         let release = DispatchSemaphore(value: 0)
         var timeouts: [Int] = []
 
@@ -38,15 +36,38 @@ final class BackgroundWorkTests: XCTestCase {
             draw: { _, _ in },
             readKey: { timeout in
                 timeouts.append(timeout)
-                release.signal()
+                if timeouts.count == 20 { release.signal() }
                 return nil
             },
             onKey: { _, _ in },
             work: { _, _ in release.wait(timeout: .now() + self.wait) }
         )
 
-        XCTAssertEqual(timeouts.first, BackgroundWork.redrawIntervalMilliseconds)
+        XCTAssertTrue((1...80).contains(timeouts.first ?? 0))
         XCTAssertEqual(BackgroundWork.redrawIntervalMilliseconds, 80)
+        XCTAssertTrue(timeouts.allSatisfy { (0...80).contains($0) })
+    }
+
+    func testHeldKeysDoNotSpeedUpTheRedraw() {
+        let release = DispatchSemaphore(value: 0)
+        var ticks: [Int] = []
+        var reads = 0
+
+        _ = BackgroundWork.run(
+            progress: 0,
+            draw: { tick, _ in ticks.append(tick) },
+            readKey: { _ in
+                reads += 1
+                if reads == 200 { release.signal() }
+                return .down
+            },
+            onKey: { _, _ in },
+            work: { _, _ in release.wait(timeout: .now() + self.wait) }
+        )
+
+        XCTAssertGreaterThanOrEqual(reads, 200)
+        XCTAssertLessThan(ticks.count, 20)
+        XCTAssertEqual(ticks, Array(0..<ticks.count))
     }
 
     func testKeysReachTheHandler() {

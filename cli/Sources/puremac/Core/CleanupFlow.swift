@@ -7,7 +7,21 @@ enum CleanupFlowResult {
     case finished(CleanOutcome)
 }
 
+struct RemovalProgress {
+    let position: Int
+    let count: Int
+    let path: String
+
+    init(index: Int, count: Int, path: String) {
+        position = index + 1
+        self.count = count
+        self.path = path
+    }
+}
+
 enum CleanupFlow {
+    private static let removingMaxContentWidth = 60
+
     struct Labels {
         let scanning: String
         let empty: String
@@ -36,8 +50,20 @@ enum CleanupFlow {
         ) else { return .cancelled }
 
         let items = review.selectedResult().flatMap { $0.selectedItems }
-        session.draw(removingScreen(review: review, labels: labels, width: session.width, height: session.height))
-        let outcome = Cleaner.remove(items, ignore: ignore, dryRun: false)
+        let outcome = session.runWithSpinner(
+            progress: RemovalProgress(index: 0, count: items.count, path: items.first?.path ?? ""),
+            render: { tick, progress in
+                removingScreen(
+                    review: review, labels: labels, progress: progress, tick: tick,
+                    width: session.width, height: session.height
+                )
+            },
+            work: { progress, _ in
+                Cleaner.remove(items, ignore: ignore, dryRun: false) { index, count, item in
+                    progress.set(RemovalProgress(index: index, count: count, path: item.path))
+                }
+            }
+        )
         session.draw(resultScreen(outcome: outcome, review: review, labels: labels, width: session.width, height: session.height))
         while !closesInfoDialog(session.readKey()) {}
         return .finished(outcome)
@@ -88,10 +114,12 @@ enum CleanupFlow {
         )
     }
 
-    static func removingScreen(review: InteractiveReviewModel, labels: Labels, width: Int, height: Int) -> Buffer {
-        let dialog = removingDialog(count: review.selectedCount, total: review.selectedBytes, noun: labels.noun)
+    static func removingScreen(
+        review: InteractiveReviewModel, labels: Labels, progress: RemovalProgress, tick: Int, width: Int, height: Int
+    ) -> Buffer {
+        let area = Rect(x: 0, y: 0, width: width, height: height)
         return StatusScreen.overlay(
-            dialog,
+            removingDialog(noun: labels.noun, progress: progress, tick: tick, area: area),
             on: selectionScreen(review, labels: labels, width: width, height: height),
             tooSmallExitHint: "Removing…"
         )
@@ -109,12 +137,19 @@ enum CleanupFlow {
         "\(count) \(noun)\(count == 1 ? "" : "s")"
     }
 
-    static func removingDialog(count: Int, total: Int64, noun: String) -> Dialog {
-        Dialog(
-            title: "Removing \(counted(count, noun))…",
+    static func removingDialog(noun: String, progress: RemovalProgress, tick: Int, area: Rect) -> Dialog {
+        let rowWidth = min(removingMaxContentWidth, Dialog.maxContentWidth(in: area))
+        let current = Term.truncate(
+            Spinner.frame(tick: tick) + " " + Render.shorten(progress.path), to: rowWidth, middle: true
+        )
+        return Dialog(
+            title: "Removing \(counted(progress.count, noun))…",
             titleStyle: StatusScreen.warningTitle,
             borderStyle: StatusScreen.warningBorder,
-            message: [Span(ByteCount.human(total))]
+            message: [
+                Span(Term.pad(current, to: rowWidth)),
+                Span("\(progress.position) of \(progress.count)", TextStyle(dim: true))
+            ]
         )
     }
 

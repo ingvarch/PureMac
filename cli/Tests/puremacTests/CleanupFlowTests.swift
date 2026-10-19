@@ -40,36 +40,97 @@ final class CleanupFlowTests: XCTestCase {
     }
 
     func testRemovingScreenShowsStatusDialogWithoutButtonsOverFadedSelectionScreen() {
-        let buffer = CleanupFlow.removingScreen(review: review(), labels: labels, width: 80, height: 24)
+        let buffer = CleanupFlow.removingScreen(
+            review: review(), labels: labels, progress: progress(), tick: 0, width: 80, height: 24
+        )
         let lines = buffer.plainLines()
         XCTAssertTrue(lines.contains { $0.contains("Removing 2 items…") })
-        XCTAssertTrue(lines.contains { $0.contains("3 KB") })
-        let dialog = CleanupFlow.removingDialog(count: 2, total: 3_000, noun: "item")
+        XCTAssertTrue(lines.contains { $0.contains("⠋ /tmp/second") })
+        XCTAssertTrue(lines.contains { $0.contains("2 of 2") })
+        let dialog = CleanupFlow.removingDialog(noun: "item", progress: progress(), tick: 0, area: buffer.area)
         XCTAssertTrue(dialog.buttons.isEmpty)
         XCTAssertNil(dialog.focusedButton)
+        XCTAssertNil(dialog.hints)
         XCTAssertTrue(lines.contains { $0.contains("╭─ Choose items to clean ") })
         XCTAssertFalse(lines.contains { $0.contains("Final review") })
         XCTAssertTrue(lines.contains { $0.contains("/tmp/first") })
         XCTAssertTrue(lines.contains { $0.contains("/tmp/third") })
         XCTAssertEqual(buffer[0, 0].style, TextStyle(dim: true))
-        let frame = CleanupFlow.removingDialog(count: 2, total: 3_000, noun: "item").frame(in: buffer.area)
+        let frame = dialog.frame(in: buffer.area)
         XCTAssertEqual(buffer[frame.x, frame.y].style, TextStyle(color: .yellow))
         XCTAssertEqual(buffer[frame.x + 3, frame.y].style, TextStyle(color: .yellow, bold: true))
     }
 
+    func testRemovingDialogShowsSpinnerFrameForTheTick() {
+        let area = Rect(x: 0, y: 0, width: 80, height: 24)
+        let first = CleanupFlow.removingDialog(noun: "item", progress: progress(), tick: 0, area: area)
+        let second = CleanupFlow.removingDialog(noun: "item", progress: progress(), tick: 1, area: area)
+        XCTAssertTrue(first.message[0].text.hasPrefix("\(Spinner.frame(tick: 0)) "))
+        XCTAssertTrue(second.message[0].text.hasPrefix("\(Spinner.frame(tick: 1)) "))
+    }
+
+    func testRemovingDialogCountRowIsDim() {
+        let dialog = CleanupFlow.removingDialog(
+            noun: "item", progress: RemovalProgress(index: 2, count: 5, path: "/tmp/a"), tick: 0,
+            area: Rect(x: 0, y: 0, width: 80, height: 24)
+        )
+        XCTAssertEqual(dialog.message[1], Span("3 of 5", TextStyle(dim: true)))
+        XCTAssertEqual(dialog.message.count, 2)
+    }
+
+    func testRemovingDialogKeepsFixedWidthAcrossItems() {
+        let wide = Rect(x: 0, y: 0, width: 120, height: 24)
+        let short = RemovalProgress(index: 0, count: 2, path: "/tmp/a")
+        let long = RemovalProgress(index: 1, count: 2, path: "/tmp/" + String(repeating: "deep-name/", count: 20))
+        let shortDialog = CleanupFlow.removingDialog(noun: "item", progress: short, tick: 0, area: wide)
+        let longDialog = CleanupFlow.removingDialog(noun: "item", progress: long, tick: 5, area: wide)
+        XCTAssertEqual(shortDialog.frame(in: wide), longDialog.frame(in: wide))
+        XCTAssertEqual(shortDialog.frame(in: wide).width, 60 + 4)
+        let narrow = Rect(x: 0, y: 0, width: 40, height: 12)
+        XCTAssertEqual(
+            CleanupFlow.removingDialog(noun: "item", progress: short, tick: 0, area: narrow).frame(in: narrow).width,
+            Dialog.maxContentWidth(in: narrow) + 4
+        )
+    }
+
+    func testRemovingDialogShortensAndMiddleTruncatesThePath() {
+        let area = Rect(x: 0, y: 0, width: 80, height: 24)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = home + "/Library/Caches/" + String(repeating: "very-long-name/", count: 8) + "end"
+        let row = CleanupFlow.removingDialog(
+            noun: "item", progress: RemovalProgress(index: 0, count: 1, path: path), tick: 0, area: area
+        ).message[0].text
+        XCTAssertEqual(Term.displayWidth(row), 60)
+        XCTAssertTrue(row.contains("~/Library"))
+        XCTAssertTrue(row.contains("…"))
+        XCTAssertTrue(row.hasSuffix("end"))
+    }
+
+    func testRemovalProgressIsOneBasedAndSizedFromTheCleanerCallback() {
+        let progress = RemovalProgress(index: 0, count: 3, path: "/tmp/x")
+        XCTAssertEqual(progress.position, 1)
+        XCTAssertEqual(progress.count, 3)
+        XCTAssertEqual(RemovalProgress(index: 2, count: 3, path: "/tmp/y").position, 3)
+    }
+
     func testRemovingTitleUsesSingularForOneItem() {
-        XCTAssertEqual(CleanupFlow.removingDialog(count: 1, total: 1_000, noun: "item").title, "Removing 1 item…")
-        XCTAssertEqual(CleanupFlow.removingDialog(count: 1, total: 1_000, noun: "artifact").title, "Removing 1 artifact…")
-        XCTAssertEqual(CleanupFlow.removingDialog(count: 0, total: 0, noun: "item").title, "Removing 0 items…")
-        XCTAssertEqual(CleanupFlow.removingDialog(count: 2, total: 1_000, noun: "artifact").title, "Removing 2 artifacts…")
+        let area = Rect(x: 0, y: 0, width: 80, height: 24)
+        func title(_ count: Int, _ noun: String) -> String {
+            CleanupFlow.removingDialog(
+                noun: noun, progress: RemovalProgress(index: 0, count: count, path: "/tmp/a"), tick: 0, area: area
+            ).title
+        }
+        XCTAssertEqual(title(1, "item"), "Removing 1 item…")
+        XCTAssertEqual(title(1, "artifact"), "Removing 1 artifact…")
+        XCTAssertEqual(title(0, "item"), "Removing 0 items…")
+        XCTAssertEqual(title(2, "artifact"), "Removing 2 artifacts…")
     }
 
     func testRemovingDialogUsesTheNoun() {
         let lines = CleanupFlow.removingScreen(
             review: review(),
             labels: CleanupFlow.Labels(scanning: "s", empty: "e", reviewTitle: "t", noun: "artifact"),
-            width: 80,
-            height: 24
+            progress: progress(), tick: 0, width: 80, height: 24
         ).plainLines()
         XCTAssertTrue(lines.contains { $0.contains("Removing 2 artifacts…") })
     }
@@ -183,7 +244,9 @@ final class CleanupFlowTests: XCTestCase {
     }
 
     func testTooSmallRemovingScreenMakesNoCancelPromise() {
-        let lines = CleanupFlow.removingScreen(review: review(), labels: labels, width: 30, height: 8).plainLines()
+        let lines = CleanupFlow.removingScreen(
+            review: review(), labels: labels, progress: progress(), tick: 0, width: 30, height: 8
+        ).plainLines()
         XCTAssertTrue(lines.contains { $0.contains("Removing") })
         XCTAssertFalse(lines.contains { $0.contains("Esc") || $0.contains("cancel") })
     }
@@ -194,6 +257,10 @@ final class CleanupFlowTests: XCTestCase {
             outcome: CleanOutcome(removed: 1, freedBytes: 1_000), review: model, labels: labels, width: 80, height: 24
         ).plainLines()
         XCTAssertTrue(lines.contains { $0.contains("Filter  first") })
+    }
+
+    private func progress() -> RemovalProgress {
+        RemovalProgress(index: 1, count: 2, path: "/tmp/second")
     }
 
     private func review() -> InteractiveReviewModel {
