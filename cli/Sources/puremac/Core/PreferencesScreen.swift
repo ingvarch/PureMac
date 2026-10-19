@@ -45,12 +45,16 @@ struct PreferencesScreen {
         do {
             let store = try ConfigStore(fileURL: AppPaths.configFile)
             days = store.olderThanDays
-            folderCount = store.projectRoots.count
         } catch {
             days = ConfigStore.defaultDays
-            folderCount = Purger.defaultRoots.count
             loadError = error.localizedDescription
             configUnreadable = true
+        }
+        do {
+            folderCount = try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots.count
+        } catch {
+            folderCount = Purger.defaultRoots.count
+            loadError = loadError ?? error.localizedDescription
         }
         do {
             pathCount = try IgnoreStore(fileURL: AppPaths.ignoreFile).roots.count

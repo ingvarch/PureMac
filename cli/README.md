@@ -36,7 +36,7 @@ puremac purge ~/Projects
 puremac analyze ~/Projects
 ```
 
-`puremac purge` with no path scans the project folders from Preferences, by default ~/Projects, ~/Code, ~/dev, ~/GitHub and ~/Workspace. The first interactive start creates `~/.config/puremac/config.json` and an empty `~/.config/puremac/ignore`; existing files are never overwritten.
+`puremac purge` with no path scans the project folders from Preferences, by default ~/Projects, ~/Code, ~/dev, ~/GitHub and ~/Workspace. The first interactive start creates `~/.config/puremac/config.json` (the age setting only), an empty `~/.config/puremac/ignore` and `~/.config/puremac/projects` (one project folder per line, filled with those defaults); existing files are never overwritten. Project folders live in their own file so older puremac releases, which reject unknown keys in `config.json`, keep working.
 
 Cleanup opens a selection screen. Nothing is selected when the interactive review begins. Move through the list, choose individual paths, and check the running size total. Press Return to remove the selection; a confirmation dialog opens first.
 

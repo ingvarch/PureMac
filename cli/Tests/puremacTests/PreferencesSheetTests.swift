@@ -16,6 +16,7 @@ final class PlainCommandOutputTests: XCTestCase {
             Files
               Settings     \(dir.path)/config.json
               Protected    \(dir.path)/ignore
+              Projects     \(dir.path)/projects
 
             Project folders
             \(Purger.defaultRoots.map { "  " + Render.shorten($0) + "\n" }.joined())
@@ -70,7 +71,7 @@ final class PreferencesSheetTests: XCTestCase {
     func testPreferencesSheetListsKeysWithValueAndNote() throws {
         try withConfigHome { dir in
             var store = try ConfigStore(fileURL: AppPaths.configFile)
-            var sheet = Config.sheet(store: store)
+            var sheet = Config.sheet(store: store, projectFolders: Purger.defaultRoots)
             XCTAssertEqual(sheet.title, "PureMac CLI settings")
             XCTAssertEqual(sheet.subtitle, "Values used when a command-line option is omitted")
             XCTAssertEqual(sheet.sections.map(\.title), [nil, "Files", "Project folders"])
@@ -79,14 +80,16 @@ final class PreferencesSheetTests: XCTestCase {
             XCTAssertEqual(note, Span("default", dim))
 
             try store.set("purge.older_than_days", "14")
-            sheet = Config.sheet(store: store)
+            sheet = Config.sheet(store: store, projectFolders: Purger.defaultRoots)
             guard case .metric(_, let saved, let savedNote) = sheet.sections[0].rows[0] else { return XCTFail("key row") }
             XCTAssertEqual(saved, [Span("14 days")])
             XCTAssertEqual(savedNote, Span("saved", TextStyle(color: .cyan)))
 
-            XCTAssertEqual(sheet.sections[1].rows.count, 2)
+            XCTAssertEqual(sheet.sections[1].rows.count, 3)
             guard case .metric("Settings", let settings, nil) = sheet.sections[1].rows[0] else { return XCTFail("settings row") }
             XCTAssertEqual(settings, [Span("\(dir.path)/config.json")])
+            guard case .metric("Projects", let projects, nil) = sheet.sections[1].rows[2] else { return XCTFail("projects row") }
+            XCTAssertEqual(projects, [Span("\(dir.path)/projects")])
         }
     }
 

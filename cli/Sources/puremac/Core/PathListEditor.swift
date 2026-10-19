@@ -37,22 +37,19 @@ extension PathListConfig {
         PathListConfig(
             title: "Project folders",
             emptyText: "No project folders. Press A to add one.",
-            load: { try ConfigStore(fileURL: AppPaths.configFile).projectRoots },
+            load: { try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots },
             add: { input in
                 let typed = input.trimmingCharacters(in: .whitespaces)
                 guard !typed.isEmpty else { throw PathListError("Enter a folder path") }
                 let verdict = Safety.isValidScanRoot(typed)
                 guard verdict.ok else { throw PathListError(verdict.reason ?? "Not a valid project folder") }
-                var store = try ConfigStore(fileURL: AppPaths.configFile)
+                var store = try ProjectFoldersStore(fileURL: AppPaths.projectsFile)
                 let root = standardized(typed)
-                guard !store.projectRoots.contains(root) else {
-                    throw PathListError.duplicate(root)
-                }
-                try store.setProjectRoots(store.projectRoots + [root])
+                guard try store.add(root) else { throw PathListError.duplicate(root) }
             },
             remove: { path in
-                var store = try ConfigStore(fileURL: AppPaths.configFile)
-                try store.setProjectRoots(store.projectRoots.filter { $0 != path })
+                var store = try ProjectFoldersStore(fileURL: AppPaths.projectsFile)
+                _ = try store.remove(path)
             },
             removalPrompt: nil
         )

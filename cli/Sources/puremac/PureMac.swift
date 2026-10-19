@@ -90,7 +90,7 @@ enum HomeMenu {
                 let arguments = [[], ["dev"], ["junk"], ["ai"], ["trash"]]
                 try Clean.parse(arguments[category]).run()
             case projectCleanupIndex:
-                let folderCount = try ConfigStore(fileURL: AppPaths.configFile).projectRoots.count
+                let folderCount = try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots.count
                 guard let confirmation = projectCleanupConfirmation(folderCount: folderCount) else {
                     try showNoFoldersNotice()
                     continue

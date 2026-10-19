@@ -488,11 +488,11 @@ final class ProjectFoldersTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    func testAddSavesTheStandardizedFolderThroughTheConfigFile() throws {
+    func testAddSavesTheStandardizedFolderThroughTheProjectsFile() throws {
         try withConfigHome { _ in
             let config = PathListConfig.projectFolders
             try config.add(folder.path + "/")
-            XCTAssertEqual(try ConfigStore(fileURL: AppPaths.configFile).projectRoots, Purger.defaultRoots + [folder.path])
+            XCTAssertEqual(try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots, Purger.defaultRoots + [folder.path])
             XCTAssertEqual(try config.load(), Purger.defaultRoots + [folder.path])
         }
     }

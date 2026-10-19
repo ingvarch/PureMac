@@ -50,16 +50,17 @@ struct Config: ParsableCommand {
             return
         }
 
-        for line in Self.sheet(store: store).plainLines() { print(line) }
+        let folders = try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots
+        for line in Self.sheet(store: store, projectFolders: folders).plainLines() { print(line) }
     }
 
     static let sheetTitle = "PureMac CLI settings"
 
-    static func sheet(store: ConfigStore) -> InfoSheet {
+    static func sheet(store: ConfigStore, projectFolders: [String]) -> InfoSheet {
         let days = store.olderThanDays
         let note = days == ConfigStore.defaultDays ? Span("default", TextStyle(dim: true)) : Span("saved", TextStyle(color: .cyan))
         let keys = [InfoRow.metric(label: ConfigStore.daysKey, value: [Span("\(days) days")], note: note)]
-        let files = [("Settings", AppPaths.configFile), ("Protected", AppPaths.ignoreFile)].map { label, url in
+        let files = [("Settings", AppPaths.configFile), ("Protected", AppPaths.ignoreFile), ("Projects", AppPaths.projectsFile)].map { label, url in
             InfoRow.metric(label: label, value: [Span(Render.shorten(url.path))], note: nil)
         }
         return InfoSheet(
@@ -68,7 +69,7 @@ struct Config: ParsableCommand {
             sections: [
                 InfoSection(title: nil, labelWidth: 26, rows: keys),
                 InfoSection(title: "Files", labelWidth: 12, rows: files),
-                InfoSection(title: "Project folders", rows: store.projectRoots.map { .path(Render.shorten($0)) }),
+                InfoSection(title: "Project folders", rows: projectFolders.map { .path(Render.shorten($0)) }),
             ],
             footnote: nil
         )

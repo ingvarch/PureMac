@@ -140,7 +140,7 @@ struct Purge: ParsableCommand {
 
     func resolvedRoots() throws -> [String] {
         guard paths.isEmpty else { return paths.map { Safety.absolutePath($0) } }
-        return try ConfigStore(fileURL: AppPaths.configFile).projectRoots
+        return try ProjectFoldersStore(fileURL: AppPaths.projectsFile).roots
     }
 
     func renderScan(_ cat: CategoryScan, days: Int, colors: Bool = Term.colorEnabled) {

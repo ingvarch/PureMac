@@ -126,8 +126,7 @@ final class PreferencesScreenTests: XCTestCase {
             var screen = PreferencesScreen()
             var ignore = try IgnoreStore(fileURL: AppPaths.ignoreFile)
             _ = try ignore.add("/tmp/puremac-a")
-            var store = try ConfigStore(fileURL: AppPaths.configFile)
-            try store.setProjectRoots(["/tmp/puremac-x"])
+            try Data("/tmp/puremac-x\n".utf8).write(to: AppPaths.projectsFile)
             screen.reload()
             XCTAssertEqual(screen.pathCount, 1)
             XCTAssertEqual(screen.folderCount, 1)
@@ -156,7 +155,7 @@ final class PreferencesScreenTests: XCTestCase {
             var ignore = try IgnoreStore(fileURL: AppPaths.ignoreFile)
             _ = try ignore.add("/tmp/puremac-a")
             var store = try ConfigStore(fileURL: AppPaths.configFile)
-            try store.setProjectRoots(["/tmp/puremac-x"])
+            try Data("/tmp/puremac-x\n".utf8).write(to: AppPaths.projectsFile)
             try store.set(ConfigStore.daysKey, "1")
             let text = lines(PreferencesScreen()).joined(separator: "\n")
             XCTAssertTrue(text.contains("‹ 1 day ›"), text)
@@ -214,6 +213,20 @@ final class PreferencesScreenTests: XCTestCase {
             let index = try XCTUnwrap(rows.firstIndex { $0.contains("not a valid") })
             XCTAssertEqual(buffer[2, index].style, TextStyle(color: .red))
             XCTAssertEqual(screen.days, ConfigStore.defaultDays)
+        }
+    }
+
+    func testUnreadableProjectsFileShowsARedRowAndKeepsTheDefaultCount() throws {
+        try withConfigHome { dir in
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data("relative\n".utf8).write(to: AppPaths.projectsFile)
+            let screen = PreferencesScreen()
+            let buffer = screen.render(width: 160, height: 24)
+            let rows = buffer.plainLines()
+            let index = try XCTUnwrap(rows.firstIndex { $0.contains("Project folders file contains an invalid or relative path") })
+            XCTAssertEqual(buffer[2, index].style, TextStyle(color: .red))
+            XCTAssertEqual(screen.folderCount, Purger.defaultRoots.count)
+            XCTAssertEqual(screen.days, 7)
         }
     }
 
