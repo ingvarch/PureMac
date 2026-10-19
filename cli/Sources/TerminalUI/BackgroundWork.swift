@@ -19,6 +19,12 @@ public final class WorkProgress<Value>: @unchecked Sendable {
         current = newValue
         lock.unlock()
     }
+
+    public func update(_ change: (inout Value) -> Void) {
+        lock.lock()
+        change(&current)
+        lock.unlock()
+    }
 }
 
 public final class CancelFlag: @unchecked Sendable {

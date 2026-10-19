@@ -72,6 +72,12 @@ struct Analyze: ParsableCommand {
         let skippedCount: Int
 
         var isPartial: Bool { inaccessibleCount > 0 || skippedCount > 0 }
+
+        static func suffix(isDirectory: Bool, isPackage: Bool) -> String {
+            isDirectory && !isPackage ? "/" : (isPackage ? " [package]" : "")
+        }
+
+        var suffix: String { Self.suffix(isDirectory: isDir, isPackage: isPackage) }
     }
 
     struct FolderSnapshot: Equatable {
@@ -91,13 +97,43 @@ struct Analyze: ParsableCommand {
         var errors: [String] = []
     }
 
+    enum ScanEvent: Equatable {
+        case measuring(position: Int, count: Int, name: String, isDirectory: Bool, isPackage: Bool)
+        case measured(Child)
+    }
+
+    struct ScanProgress {
+        let path: String
+        var position = 0
+        var count = 0
+        var name = ""
+        var nameIsDirectory = false
+        var nameIsPackage = false
+        var measured: [Child] = []
+
+        mutating func apply(_ event: ScanEvent) {
+            switch event {
+            case .measuring(let position, let count, let name, let isDirectory, let isPackage):
+                (self.position, self.count, self.name) = (position, count, name)
+                (nameIsDirectory, nameIsPackage) = (isDirectory, isPackage)
+            case .measured(let child):
+                measured.append(child)
+            }
+        }
+    }
+
     struct BrowserLevel {
         let snapshot: FolderSnapshot
         var selected = 0
         var offset = 0
     }
 
-    func scanFolder(_ directory: String, ignore: IgnoreStore = IgnoreStore()) -> FolderSnapshot {
+    func scanFolder(
+        _ directory: String,
+        ignore: IgnoreStore = IgnoreStore(),
+        progress: ((ScanEvent) -> Void)? = nil,
+        isCancelled: () -> Bool = { false }
+    ) -> FolderSnapshot {
         let standardized = (directory as NSString).standardizingPath
         let directoryURL = URL(fileURLWithPath: standardized, isDirectory: true)
         let names: [String]
@@ -117,20 +153,23 @@ struct Analyze: ParsableCommand {
         var context = MeasureContext()
         var children: [Child] = []
         let orderedNames = names.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        for name in orderedNames {
+        for (index, name) in orderedNames.enumerated() {
+            if isCancelled() { break }
             let url = directoryURL.appendingPathComponent(name)
+            if let progress {
+                let kind = Self.kind(of: url)
+                progress(.measuring(
+                    position: index + 1, count: orderedNames.count, name: name,
+                    isDirectory: kind.isDirectory, isPackage: kind.isPackage
+                ))
+            }
             if let child = measureChild(url, ignore: ignore, context: &context) {
                 children.append(child)
+                progress?(.measured(child))
             }
         }
 
-        children.sort {
-            if $0.size == $1.size {
-                return URL(fileURLWithPath: $0.path).lastPathComponent
-                    .localizedStandardCompare(URL(fileURLWithPath: $1.path).lastPathComponent) == .orderedAscending
-            }
-            return $0.size > $1.size
-        }
+        children = Self.ranked(children)
         return FolderSnapshot(
             path: standardized,
             children: children,
@@ -141,8 +180,24 @@ struct Analyze: ParsableCommand {
         )
     }
 
+    static func ranked(_ children: [Child]) -> [Child] {
+        children.sorted {
+            if $0.size == $1.size {
+                return URL(fileURLWithPath: $0.path).lastPathComponent
+                    .localizedStandardCompare(URL(fileURLWithPath: $1.path).lastPathComponent) == .orderedAscending
+            }
+            return $0.size > $1.size
+        }
+    }
+
     func sizedChildren(of directory: String) -> [Child] {
         scanFolder(directory).children
+    }
+
+    private static func kind(of url: URL) -> (isDirectory: Bool, isPackage: Bool) {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        let isDirectory = values?.isDirectory == true
+        return (isDirectory, isDirectory && values?.isPackage == true)
     }
 
     private func measureChild(_ topURL: URL, ignore: IgnoreStore, context: inout MeasureContext) -> Child? {
@@ -167,13 +222,12 @@ struct Analyze: ParsableCommand {
             break
         }
 
-        let values = try? topURL.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-        let isDirectory = values?.isDirectory == true
+        let kind = Self.kind(of: topURL)
         return Child(
             path: path,
             size: measurement.bytes,
-            isDir: isDirectory,
-            isPackage: isDirectory && values?.isPackage == true,
+            isDir: kind.isDirectory,
+            isPackage: kind.isPackage,
             inaccessibleCount: 0,
             skippedCount: measurement.status == .partial ? max(1, measurement.skippedEntries) : 0
         )
@@ -217,9 +271,8 @@ struct Analyze: ParsableCommand {
             let fraction = total > 0 ? Double(child.size) / Double(total) : 0
             let percentage = String(format: "%5.1f%%", fraction * 100)
             let size = ByteCount.human(child.size).padding(toLength: 10, withPad: " ", startingAt: 0)
-            let suffix = child.isDir && !child.isPackage ? "/" : (child.isPackage ? " [package]" : "")
             let partial = child.isPartial ? Term.yellow(" !") : ""
-            let name = URL(fileURLWithPath: child.path).lastPathComponent + suffix
+            let name = URL(fileURLWithPath: child.path).lastPathComponent + child.suffix
             print("\(indent)\(size) \(Term.dim(percentage)) \(Term.bar(fraction: fraction, width: 20)) \(name)\(partial)")
             if depthLeft > 0 && child.isDir && !child.isPackage {
                 let snapshot = scanFolder(child.path, ignore: ignore)
@@ -242,8 +295,8 @@ struct Analyze: ParsableCommand {
     private func browse(_ target: String, ignore: IgnoreStore) throws {
         let session = try TerminalSession()
         defer { session.close() }
-        session.draw(Self.renderMeasuring(target, width: session.width, height: session.height))
-        var levels = [BrowserLevel(snapshot: scanFolder(target, ignore: ignore))]
+        guard let first = measure(target, ignore: ignore, session: session, drillingDown: false) else { return }
+        var levels = [BrowserLevel(snapshot: first)]
         var running = true
 
         while running {
@@ -272,8 +325,9 @@ struct Analyze: ParsableCommand {
                 levels[index].selected = max(0, levels[index].snapshot.children.count - 1)
             case .enter, .right:
                 guard let child = Self.focusedChild(levels[index]), child.isDir, !child.isPackage else { continue }
-                session.draw(Self.renderMeasuring(child.path, width: session.width, height: session.height))
-                levels.append(BrowserLevel(snapshot: scanFolder(child.path, ignore: ignore)))
+                if let snapshot = measure(child.path, ignore: ignore, session: session, drillingDown: true) {
+                    levels.append(BrowserLevel(snapshot: snapshot))
+                }
             case .left, .backspace:
                 if levels.count > 1 { levels.removeLast() }
             case .escape:
@@ -291,15 +345,34 @@ struct Analyze: ParsableCommand {
         }
     }
 
-    static func renderMeasuring(_ path: String, width: Int, height: Int) -> Buffer {
-        StatusScreen.render(
-            title: windowTitle,
-            message: "Measuring allocated space...",
-            detail: path,
-            hint: StatusScreen.cancelHint,
-            width: width,
-            height: height
+    private func measure(_ path: String, ignore: IgnoreStore, session: TerminalSession, drillingDown: Bool) -> FolderSnapshot? {
+        session.runWithSpinner(
+            progress: ScanProgress(path: (path as NSString).standardizingPath),
+            render: { tick, progress in
+                Self.renderMeasuringBrowser(
+                    progress: progress, tick: tick, drillingDown: drillingDown,
+                    width: session.width, height: session.height
+                )
+            },
+            onKey: { key, cancel in
+                if Self.cancelsMeasuring(key, drillingDown: drillingDown) { cancel.cancel() }
+            },
+            work: { progress, cancel in
+                let snapshot = scanFolder(path, ignore: ignore, progress: { event in
+                    progress.update { $0.apply(event) }
+                }, isCancelled: { cancel.isCancelled })
+                return cancel.isCancelled ? nil : snapshot
+            }
         )
+    }
+
+    static func cancelsMeasuring(_ key: TerminalKey, drillingDown: Bool) -> Bool {
+        switch key {
+        case .escape: return true
+        case .left, .backspace: return drillingDown
+        case .character(let character): return !drillingDown && character.lowercased() == "q"
+        default: return false
+        }
     }
 
     private static let windowTitle = "PureMac Space Explorer"
@@ -312,13 +385,17 @@ struct Analyze: ParsableCommand {
     private static let headerRows = 2
     private static let dividerRows = 1
     private static let minimumListRows = 3
+    private static let exitKeyHint = KeyHint("q/Esc", "exit")
+    private static let exitText = "Esc/q exit"
     private static let browserHints = KeyHints([
         KeyHint("↑↓", "move"),
         KeyHint("Enter/→", "open"),
         KeyHint("O", "reveal"),
         KeyHint("←/⌫", "back"),
-        KeyHint("q/Esc", "exit")
+        exitKeyHint
     ])
+    private static let firstScanHints = KeyHints([exitKeyHint])
+    private static let drillDownHints = KeyHints([KeyHint("←/⌫/Esc", "back")])
 
     private struct BrowserLayout {
         let header: Rect
@@ -332,15 +409,17 @@ struct Analyze: ParsableCommand {
         var visibleRows: Int { max(1, list.height) }
     }
 
-    private static func layout(snapshot: FolderSnapshot, selected: Int, width: Int, height: Int) -> BrowserLayout {
+    private static func layout(
+        snapshot: FolderSnapshot, selected: Int, hints: KeyHints = browserHints, showsPath: Bool = true, width: Int, height: Int
+    ) -> BrowserLayout {
         let content = window.contentRect(in: Rect(x: 0, y: 0, width: width, height: height))
         let focusedPath = snapshot.children.indices.contains(selected) ? snapshot.children[selected].path : snapshot.path
         let pathWidth = max(1, content.width - focusedLabel.count)
-        let hintRows = browserHints.rows(width: content.width).count
+        let hintRows = hints.rows(width: content.width).count
         let errorRows = snapshot.errors.isEmpty ? 0 : 1
         let spareRows = content.height - headerRows - dividerRows - errorRows - hintRows - minimumListRows
         var pathLines = Term.wrap(focusedPath, width: pathWidth)
-        let pathRows = min(pathLines.count, max(1, spareRows))
+        let pathRows = showsPath ? min(pathLines.count, max(1, spareRows)) : 0
         var budget = pathRows * pathWidth
         while pathLines.count > pathRows && budget > 1 {
             pathLines = Term.wrap(Term.truncate(focusedPath, to: budget, middle: true), width: pathWidth)
@@ -360,14 +439,65 @@ struct Analyze: ParsableCommand {
         )
     }
 
+    private struct Measuring {
+        let tick: Int
+        let progress: ScanProgress
+        let drillingDown: Bool
+
+        var hints: KeyHints { drillingDown ? drillDownHints : firstScanHints }
+        var exitHint: String { drillingDown ? "Esc back" : exitText }
+
+        var statusSpans: [Span] {
+            let status = progress.position == 0 ? "Measuring…" : "Measuring \(progress.position) of \(progress.count)"
+            return [Span(Spinner.frame(tick: tick) + " " + status, TextStyle(dim: true))]
+        }
+
+        func currentRow(width: Int) -> String? {
+            guard !progress.name.isEmpty else { return nil }
+            let suffix = Child.suffix(isDirectory: progress.nameIsDirectory, isPackage: progress.nameIsPackage)
+            let spinner = Spinner.frame(tick: tick) + " "
+            return spinner + Term.truncate(progress.name + suffix, to: max(1, width - spinner.count), middle: true)
+        }
+    }
+
+    static func renderMeasuringBrowser(
+        progress: ScanProgress, tick: Int, drillingDown: Bool, width: Int, height: Int
+    ) -> Buffer {
+        let children = ranked(progress.measured)
+        let snapshot = FolderSnapshot(
+            path: progress.path,
+            children: children,
+            total: children.reduce(Int64(0)) { $0 + $1.size },
+            inaccessibleCount: 0,
+            skippedCount: 0,
+            errors: []
+        )
+        return render(
+            level: BrowserLevel(snapshot: snapshot, selected: -1),
+            measuring: Measuring(tick: tick, progress: progress, drillingDown: drillingDown),
+            width: width,
+            height: height
+        )
+    }
+
     static func renderBrowser(level: BrowserLevel, width: Int, height: Int) -> Buffer {
+        render(level: level, measuring: nil, width: width, height: height)
+    }
+
+    private static func render(level: BrowserLevel, measuring: Measuring?, width: Int, height: Int) -> Buffer {
         guard TooSmallScreen.fits(width: width, height: height) else {
-            return TooSmallScreen.render(title: windowTitle, exitHint: "Esc/q exit", width: width, height: height)
+            return TooSmallScreen.render(
+                title: windowTitle, exitHint: measuring?.exitHint ?? exitText, width: width, height: height
+            )
         }
         var buffer = Buffer(width: width, height: height)
         let snapshot = level.snapshot
+        let hints = measuring?.hints ?? browserHints
         window.render(in: buffer.area, buffer: &buffer)
-        let layout = layout(snapshot: snapshot, selected: level.selected, width: width, height: height)
+        let layout = layout(
+            snapshot: snapshot, selected: level.selected, hints: hints, showsPath: measuring == nil,
+            width: width, height: height
+        )
 
         buffer.write(
             Term.truncate(snapshot.path, to: layout.header.width, middle: true),
@@ -376,14 +506,16 @@ struct Analyze: ParsableCommand {
             style: TextStyle(bold: true)
         )
         buffer.write(
-            statusLine(snapshot, width: layout.header.width),
+            measuring?.statusSpans ?? [Span(statusLine(snapshot, width: layout.header.width), TextStyle(dim: true))],
             x: layout.header.x,
             y: layout.header.y + 1,
-            style: TextStyle(dim: true)
+            maxWidth: layout.header.width
         )
         window.renderDivider(atRow: layout.divider.y, in: buffer.area, buffer: &buffer)
-        renderRows(level: level, in: layout.list, buffer: &buffer)
-        Scrollbar(total: snapshot.children.count, visible: layout.visibleRows, offset: level.offset)
+        let currentRow = measuring?.currentRow(width: layout.list.width)
+        let capacity = max(0, layout.list.height - (currentRow == nil ? 0 : 1))
+        renderRows(level: level, isMeasuring: measuring != nil, currentRow: currentRow, capacity: capacity, in: layout.list, buffer: &buffer)
+        Scrollbar(total: snapshot.children.count, visible: capacity, offset: level.offset)
             .render(column: width - 1, rows: layout.list.y..<(layout.list.y + layout.list.height), buffer: &buffer)
 
         for (index, line) in layout.pathLines.prefix(layout.path.height).enumerated() {
@@ -404,14 +536,21 @@ struct Analyze: ParsableCommand {
                 maxWidth: area.width
             )
         }
-        browserHints.render(in: layout.footer, buffer: &buffer)
+        hints.render(in: layout.footer, buffer: &buffer)
         return buffer
     }
 
-    private static func renderRows(level: BrowserLevel, in list: Rect, buffer: inout Buffer) {
+    private static func renderRows(
+        level: BrowserLevel, isMeasuring: Bool, currentRow: String?, capacity: Int, in list: Rect, buffer: inout Buffer
+    ) {
         let snapshot = level.snapshot
-        let upperBound = min(snapshot.children.count, level.offset + list.height)
+        let upperBound = min(snapshot.children.count, level.offset + capacity)
+        if let currentRow {
+            let shown = max(0, upperBound - level.offset)
+            buffer.write(currentRow, x: list.x, y: list.y + shown, style: TextStyle(dim: true), maxWidth: list.width)
+        }
         guard level.offset < upperBound else {
+            guard !isMeasuring else { return }
             let inaccessible = snapshot.inaccessibleCount > 0
             buffer.write(
                 inaccessible ? "Folder contents are inaccessible." : "No measurable items.",
@@ -449,11 +588,10 @@ struct Analyze: ParsableCommand {
     private static func renderRow(_ child: Child, focused: Bool, total: Int64, in rect: Rect, buffer: inout Buffer) {
         let fraction = total > 0 ? Double(child.size) / Double(total) : 0
         let barWidth = min(maximumGaugeWidth, max(minimumGaugeWidth, (rect.width - gaugeReservedWidth) / 3))
-        let suffix = child.isDir && !child.isPackage ? "/" : (child.isPackage ? " [package]" : "")
         let partial = child.isPartial ? " !" : ""
         let nameColumn = rect.width - rowPrefixWidth - barWidth
         let nameWidth = max(1, nameColumn - partial.count)
-        let name = Term.truncate(URL(fileURLWithPath: child.path).lastPathComponent + suffix, to: nameWidth, middle: true)
+        let name = Term.truncate(URL(fileURLWithPath: child.path).lastPathComponent + child.suffix, to: nameWidth, middle: true)
         let rowStyle = TextStyle(inverse: focused)
         let sizeStyle = SizeLevel.style(bytes: child.size, focused: focused)
         let gauge = Gauge(fraction: fraction).spans(width: barWidth, filled: sizeStyle).map {

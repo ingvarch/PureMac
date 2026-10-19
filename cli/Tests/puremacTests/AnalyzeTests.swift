@@ -232,13 +232,12 @@ final class AnalyzeTests: XCTestCase {
         XCTAssertFalse(fitting.contains { $0.contains("┃") })
     }
 
-    func testHeaderAndMeasuringStyles() {
+    func testHeaderStyles() {
         let buffer = Analyze.renderBrowser(
             level: Analyze.BrowserLevel(snapshot: snapshot(children: manyChildren(3))), width: 60, height: 14
         )
         XCTAssertTrue(buffer[2, 1].style.bold)
         XCTAssertTrue(buffer[2, 2].style.dim)
-        XCTAssertTrue(Analyze.renderMeasuring("/tmp", width: 40, height: 12)[2, 1].style.dim)
     }
 
     func testVisibleRowCountKeepsAtLeastOneRowWhenTooSmall() {
@@ -339,21 +338,172 @@ final class AnalyzeTests: XCTestCase {
         )
     }
 
-    func testMeasuringScreenShowsWindowWithTruncatedPath() {
-        let lines = Analyze.renderMeasuring("/Users/example/" + String(repeating: "a", count: 60), width: 40, height: 12).plainLines()
-
-        XCTAssertEqual(lines.count, 12)
-        XCTAssertTrue(lines.allSatisfy { Term.displayWidth($0) == 40 })
-        XCTAssertTrue(lines[0].hasPrefix("╭─ PureMac Space Explorer "))
-        XCTAssertTrue(lines[1].contains("Measuring allocated space..."))
-        XCTAssertTrue(lines[2].contains("…"))
-        XCTAssertTrue(lines.joined().contains("Ctrl+C cancel"))
+    private func measuringProgress(
+        position: Int = 3, count: Int = 5, name: String = "Library", isPackage: Bool = false,
+        measured: [Analyze.Child]? = nil
+    ) -> Analyze.ScanProgress {
+        Analyze.ScanProgress(
+            path: "/tmp", position: position, count: count, name: name, nameIsDirectory: true,
+            nameIsPackage: isPackage,
+            measured: measured ?? [child("/tmp/small", size: 1_000), child("/tmp/big", size: 5_000)]
+        )
     }
 
-    func testMeasuringScreenBelowMinimumUsesTooSmallScreen() {
-        XCTAssertEqual(
-            Analyze.renderMeasuring("/tmp", width: 39, height: 11),
-            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Ctrl+C cancel", width: 39, height: 11)
+    private func measuringLines(
+        _ progress: Analyze.ScanProgress, drillingDown: Bool = false, width: Int = 60, height: Int = 14
+    ) -> [String] {
+        Analyze.renderMeasuringBrowser(
+            progress: progress, tick: 2, drillingDown: drillingDown, width: width, height: height
+        ).plainLines()
+    }
+
+    func testScanReportsEachChildBeforeAndAfterMeasuring() throws {
+        try Data(repeating: 0x41, count: 4_096).write(to: root.appendingPathComponent("a.bin"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("b-dir"), withIntermediateDirectories: true)
+        try Data(repeating: 0x42, count: 8_192).write(to: root.appendingPathComponent("b-dir/x.bin"))
+
+        var events: [Analyze.ScanEvent] = []
+        let snapshot = Analyze().scanFolder(root.path, progress: { events.append($0) })
+
+        XCTAssertEqual(events.count, 4)
+        XCTAssertEqual(events[0], .measuring(position: 1, count: 2, name: "a.bin", isDirectory: false, isPackage: false))
+        guard case .measured(let first) = events[1] else { return XCTFail("expected measured") }
+        XCTAssertEqual(URL(fileURLWithPath: first.path).lastPathComponent, "a.bin")
+        XCTAssertEqual(events[2], .measuring(position: 2, count: 2, name: "b-dir", isDirectory: true, isPackage: false))
+        XCTAssertEqual(snapshot, Analyze().scanFolder(root.path))
+    }
+
+    func testScanStopsBetweenChildrenWhenCancelled() throws {
+        for name in ["a.bin", "b.bin", "c.bin"] {
+            try Data(repeating: 0x41, count: 4_096).write(to: root.appendingPathComponent(name))
+        }
+        var measured = 0
+        let snapshot = Analyze().scanFolder(
+            root.path,
+            progress: { if case .measured = $0 { measured += 1 } },
+            isCancelled: { measured >= 1 }
         )
+
+        XCTAssertEqual(measured, 1)
+        XCTAssertEqual(snapshot.children.count, 1)
+    }
+
+    func testScanProgressCollectsEvents() {
+        var progress = Analyze.ScanProgress(path: "/tmp")
+        progress.apply(.measuring(position: 2, count: 4, name: "Docs", isDirectory: true, isPackage: true))
+        XCTAssertEqual(progress.position, 2)
+        XCTAssertEqual(progress.count, 4)
+        XCTAssertEqual(progress.name, "Docs")
+        XCTAssertTrue(progress.nameIsDirectory)
+        XCTAssertTrue(progress.nameIsPackage)
+        progress.apply(.measured(child("/tmp/Docs", size: 10)))
+        XCTAssertEqual(progress.measured.map(\.path), ["/tmp/Docs"])
+    }
+
+    func testMeasuringBrowserShowsSpinnerStatusSortedChildrenAndCurrentName() {
+        let buffer = Analyze.renderMeasuringBrowser(progress: measuringProgress(), tick: 2, drillingDown: false, width: 60, height: 14)
+        let lines = buffer.plainLines()
+
+        XCTAssertEqual(lines[0], "╭─ PureMac Space Explorer ─────────────────────────────────╮")
+        XCTAssertEqual(lines[1], "│ /tmp                                                     │")
+        XCTAssertEqual(lines[2], "│ ⠹ Measuring 3 of 5                                       │")
+        XCTAssertTrue(lines[3].contains("big/"))
+        XCTAssertTrue(lines[4].contains("small/"))
+        XCTAssertEqual(lines[5], "│ ⠹ Library/                                               │")
+        XCTAssertTrue(buffer[2, 2].style.dim)
+        XCTAssertTrue(buffer[2, 5].style.dim)
+        XCTAssertFalse(lines.joined().contains("No measurable items."))
+        XCTAssertFalse(buffer[2, 3].style.inverse)
+    }
+
+    func testMeasuringBrowserBeforeFirstChildAndForFiles() {
+        let start = Analyze.renderMeasuringBrowser(
+            progress: Analyze.ScanProgress(path: "/tmp"), tick: 0, drillingDown: false, width: 60, height: 14
+        ).plainLines()
+        XCTAssertEqual(start[2], "│ ⠋ Measuring…                                             │")
+        XCTAssertEqual(start[3], "│                                                          │")
+
+        var file = measuringProgress(name: "notes.txt", measured: [])
+        file.nameIsDirectory = false
+        XCTAssertEqual(
+            Analyze.renderMeasuringBrowser(progress: file, tick: 0, drillingDown: false, width: 60, height: 14).plainLines()[3],
+            "│ ⠋ notes.txt                                              │"
+        )
+    }
+
+    func testMeasuringBrowserBelowMinimumUsesTooSmallScreen() {
+        XCTAssertEqual(
+            Analyze.renderMeasuringBrowser(progress: measuringProgress(), tick: 0, drillingDown: false, width: 39, height: 11),
+            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Esc/q exit", width: 39, height: 11)
+        )
+        XCTAssertEqual(
+            Analyze.renderMeasuringBrowser(progress: measuringProgress(), tick: 0, drillingDown: true, width: 39, height: 11),
+            TooSmallScreen.render(title: "PureMac Space Explorer", exitHint: "Esc back", width: 39, height: 11)
+        )
+    }
+
+    func testMeasuringBrowserKeepsCurrentRowWhenMoreChildrenThanRows() {
+        let many = (0..<40).map { child("/tmp/item-\($0)", size: Int64(1_000 - $0)) }
+        let lines = measuringLines(measuringProgress(measured: many))
+        let currentIndex = lines.firstIndex { $0.contains("⠹ Library/") }
+
+        XCTAssertNotNil(currentIndex)
+        XCTAssertTrue(lines[currentIndex! - 1].contains("item-"))
+        XCTAssertTrue(lines[currentIndex! + 1].hasPrefix("├"))
+        XCTAssertTrue(lines.joined().contains("item-0/"))
+        XCTAssertFalse(lines.joined().contains("item-39/"))
+    }
+
+    func testMeasuringBrowserScrollbarMatchesDrawnRowsAndPathRowIsHidden() {
+        let lines0 = measuringLines(measuringProgress(measured: []), width: 40, height: 12)
+        XCTAssertFalse(lines0.joined().contains("Focused:"))
+        let divider = lines0.firstIndex { $0.hasPrefix("├") }!
+        let listRows = divider - 3
+        for count in [listRows - 1, listRows, listRows + 4] {
+            let many = (0..<count).map { child("/tmp/item-\($0)", size: Int64(1_000 - $0)) }
+            let buffer = Analyze.renderMeasuringBrowser(
+                progress: measuringProgress(measured: many), tick: 2, drillingDown: false, width: 40, height: 12
+            )
+            let thumb = (3..<divider).filter { buffer[39, $0].symbol == "┃" }.count
+            let expected = Scrollbar(total: count, visible: listRows - 1, offset: 0).thumb(trackHeight: listRows)?.count ?? 0
+            XCTAssertEqual(thumb, expected, "count \(count)")
+        }
+    }
+
+    func testMeasuringBrowserShowsOnlyTheKeysThatCancel() {
+        let first = measuringLines(measuringProgress()).joined(separator: "\n")
+        XCTAssertTrue(first.contains("q/Esc exit"))
+        XCTAssertFalse(first.contains("reveal"))
+        XCTAssertFalse(first.contains("move"))
+
+        let drill = measuringLines(measuringProgress(), drillingDown: true).joined(separator: "\n")
+        XCTAssertTrue(drill.contains("←/⌫/Esc back"))
+        XCTAssertFalse(drill.contains("q/Esc"))
+        XCTAssertFalse(drill.contains("reveal"))
+    }
+
+    func testMeasuringCurrentRowUsesPackageSuffixAndMiddleTruncation() {
+        XCTAssertTrue(measuringLines(measuringProgress(name: "Foo.app", isPackage: true, measured: []))[3].contains("⠹ Foo.app [package]"))
+
+        let long = String(repeating: "a", count: 40) + String(repeating: "z", count: 40)
+        let row = measuringLines(measuringProgress(name: long, measured: []))[3]
+        XCTAssertTrue(row.contains("…"))
+        XCTAssertTrue(row.contains("zzz"))
+        XCTAssertTrue(row.contains("aaa"))
+    }
+
+    func testWhichKeysCancelAMeasurement() {
+        for key in [TerminalKey.escape, .character("q"), .character("Q")] {
+            XCTAssertTrue(Analyze.cancelsMeasuring(key, drillingDown: false))
+        }
+        for key in [TerminalKey.left, .up, .enter, .backspace, .character("o")] {
+            XCTAssertFalse(Analyze.cancelsMeasuring(key, drillingDown: false))
+        }
+        for key in [TerminalKey.escape, .left, .backspace] {
+            XCTAssertTrue(Analyze.cancelsMeasuring(key, drillingDown: true))
+        }
+        for key in [TerminalKey.character("q"), .right, .enter, .down] {
+            XCTAssertFalse(Analyze.cancelsMeasuring(key, drillingDown: true))
+        }
     }
 }

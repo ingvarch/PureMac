@@ -4,6 +4,12 @@ import XCTest
 final class BackgroundWorkTests: XCTestCase {
     private let wait: DispatchTimeInterval = .seconds(5)
 
+    func testUpdateMutatesTheStoredValueInPlace() {
+        let progress = WorkProgress([1, 2])
+        progress.update { $0.append(3) }
+        XCTAssertEqual(progress.value, [1, 2, 3])
+    }
+
     func testRedrawsUntilWorkFinishesAndTickIncreases() {
         let release = DispatchSemaphore(value: 0)
         var ticks: [Int] = []
