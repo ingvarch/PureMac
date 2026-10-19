@@ -8,6 +8,13 @@ final class GaugeTests: XCTestCase {
         XCTAssertEqual(Gauge(fraction: 0.5).spans(width: 10), [Span("█████"), Span("░░░░░", dim)])
     }
 
+    func testFilledPartTakesGivenStyleAndRestStaysDim() {
+        let green = TextStyle(color: .green)
+        XCTAssertEqual(Gauge(fraction: 0.5).spans(width: 10, filled: green), [Span("█████", green), Span("░░░░░", dim)])
+        XCTAssertEqual(Gauge(fraction: 1).spans(width: 4, filled: green), [Span("████", green)])
+        XCTAssertEqual(Gauge(fraction: 0).spans(width: 4, filled: green), [Span("░░░░", dim)])
+    }
+
     func testEmptyAndFullHaveSingleSpan() {
         XCTAssertEqual(Gauge(fraction: 0).spans(width: 4), [Span("░░░░", dim)])
         XCTAssertEqual(Gauge(fraction: 1).spans(width: 4), [Span("████")])

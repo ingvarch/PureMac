@@ -5,11 +5,11 @@ public struct Gauge {
         self.fraction = fraction
     }
 
-    public func spans(width: Int) -> [Span] {
-        let filled = Term.filledCount(fraction: fraction, width: width)
+    public func spans(width: Int, filled filledStyle: TextStyle = .plain) -> [Span] {
+        let filledCount = Term.filledCount(fraction: fraction, width: width)
         return [
-            Span(String(repeating: "█", count: filled)),
-            Span(String(repeating: "░", count: max(0, width) - filled), TextStyle(dim: true))
+            Span(String(repeating: "█", count: filledCount), filledStyle),
+            Span(String(repeating: "░", count: max(0, width) - filledCount), TextStyle(dim: true))
         ].filter { !$0.text.isEmpty }
     }
 }

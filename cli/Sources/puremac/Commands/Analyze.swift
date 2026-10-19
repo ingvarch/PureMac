@@ -461,12 +461,15 @@ struct Analyze: ParsableCommand {
         let nameWidth = max(1, nameColumn - partial.count)
         let name = Term.truncate(URL(fileURLWithPath: child.path).lastPathComponent + suffix, to: nameWidth, middle: true)
         let rowStyle = TextStyle(inverse: focused)
-        let gauge = Gauge(fraction: fraction).spans(width: barWidth).map {
-            Span($0.text, TextStyle(dim: $0.style.dim, inverse: focused))
+        let sizeStyle = SizeLevel.style(bytes: child.size, focused: focused)
+        let gauge = Gauge(fraction: fraction).spans(width: barWidth, filled: sizeStyle).map {
+            Span($0.text, TextStyle(color: $0.style.color, dim: $0.style.dim, inverse: focused))
         }
         buffer.write(
             [FocusPointer.span(focused: focused),
-             Span(" " + Render.sizeCol(child.size) + " ", rowStyle)]
+             Span(" ", rowStyle),
+             Span(Render.sizeCol(child.size), sizeStyle),
+             Span(" ", rowStyle)]
                 + gauge
                 + [Span(" " + Term.pad(name + partial, to: nameColumn), rowStyle)],
             x: rect.x,

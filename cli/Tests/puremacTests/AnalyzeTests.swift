@@ -194,6 +194,25 @@ final class AnalyzeTests: XCTestCase {
         XCTAssertTrue(buffer[column(empty), 3].style.dim)
     }
 
+    func testSizeAndGaugeFillAreColoredByMagnitudeExceptOnFocusedRow() {
+        let snapshot = snapshot(children: [
+            child("/tmp/big", size: 2_000_000_000),
+            child("/tmp/mid", size: 150_000_000),
+            child("/tmp/small", size: 99_000_000),
+        ])
+        let buffer = Analyze.renderBrowser(level: Analyze.BrowserLevel(snapshot: snapshot, selected: 0), width: 120, height: 14)
+        let gaugeColumn = { (row: Int) in
+            Term.displayWidth(String(buffer.plainLines()[row].prefix { $0 != "█" && $0 != "░" }))
+        }
+
+        XCTAssertEqual(buffer[7, 3].style, TextStyle(inverse: true))
+        XCTAssertEqual(buffer[gaugeColumn(3), 3].style, TextStyle(inverse: true))
+        XCTAssertEqual(buffer[7, 4].style, TextStyle(color: .yellow))
+        XCTAssertEqual(buffer[gaugeColumn(4), 4].style, TextStyle(color: .yellow))
+        XCTAssertEqual(buffer[7, 5].style, TextStyle(color: .green))
+        XCTAssertEqual(buffer[gaugeColumn(5), 5].style, TextStyle(color: .green))
+    }
+
     func testScrollbarOnlyOverListRowsAndOnlyWhenRowsOverflow() {
         let overflowing = Analyze.renderBrowser(
             level: Analyze.BrowserLevel(snapshot: snapshot(children: manyChildren(30))), width: 60, height: 14

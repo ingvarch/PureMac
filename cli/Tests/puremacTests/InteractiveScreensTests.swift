@@ -152,6 +152,27 @@ final class InteractiveScreensTests: XCTestCase {
         XCTAssertEqual(buffer[16, 5].style, .plain)
     }
 
+    func testReviewItemSizeIsColoredByMagnitudeExceptOnFocusedRow() {
+        let sizes: [Int64] = [5, 150_000_000, 2_000_000_000]
+        let items = sizes.enumerated().map { ScanItem(path: "/tmp/\($0.offset)", sizeBytes: $0.element, modified: nil, selected: false) }
+        var model = InteractiveReviewModel(categories: [
+            CategoryScan(id: "c", title: "C", groups: [ToolGroup(tool: "T", items: items)])
+        ])
+        model.selectAllMatching()
+        model.move(2)
+        let buffer = renderReview(model, width: 60, height: 24)
+        XCTAssertEqual(buffer[7, 4].style, TextStyle(color: .green))
+        XCTAssertEqual(buffer[7, 5].style, TextStyle(color: .yellow))
+        XCTAssertEqual(buffer[7, 6].style, TextStyle(inverse: true))
+
+        XCTAssertTrue(model.beginReview())
+        model.move(2)
+        let review = renderReview(model, width: 60, height: 24)
+        XCTAssertEqual(review[7, 4].style, TextStyle(color: .green))
+        XCTAssertEqual(review[7, 5].style, TextStyle(color: .yellow))
+        XCTAssertEqual(review[7, 6].style, TextStyle(inverse: true))
+    }
+
     func testReviewFocusedPathLineSitsBelowDividerAndHintsFollow() {
         let lines = renderReview(InteractiveReviewModel(categories: fixtureCategories()), width: 80, height: 24).plainLines()
         let divider = lines.firstIndex { $0.hasPrefix("├") }!

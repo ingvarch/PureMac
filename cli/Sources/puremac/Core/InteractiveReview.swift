@@ -414,6 +414,7 @@ enum InteractiveReview {
             let item = model.item(at: address)
             let focused = address == focusedAddress
             let rowStyle = TextStyle(inverse: focused)
+            let sizeStyle = SizeLevel.style(bytes: item.sizeBytes, focused: focused)
             let pathWidth = max(1, rect.width - itemPrefixWidth)
             let path = Term.truncate(Render.shorten(item.path), to: pathWidth, middle: true)
             buffer.write(
@@ -421,7 +422,9 @@ enum InteractiveReview {
                     FocusPointer.span(focused: focused),
                     Span(" ", rowStyle),
                     Span(item.selected ? "●" : "○", TextStyle(color: item.selected ? .cyan : nil, dim: !item.selected, inverse: focused)),
-                    Span(" " + Render.sizeCol(item.sizeBytes) + " " + Term.pad(path, to: pathWidth), rowStyle)
+                    Span(" ", rowStyle),
+                    Span(Render.sizeCol(item.sizeBytes), sizeStyle),
+                    Span(" " + Term.pad(path, to: pathWidth), rowStyle)
                 ],
                 x: rect.x,
                 y: rect.y,
